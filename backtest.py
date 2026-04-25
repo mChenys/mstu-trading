@@ -20,9 +20,21 @@ import datetime
 import json
 import pandas as pd
 import numpy as np
+import config
 from fee_model import BUY, SELL, estimate_fees, max_affordable_shares
 
 # ===== 数据获取 =====
+def build_intraday_limit_hint(interval="15m", period="60d") -> str:
+    """构建 Yahoo 分钟级历史限制提示。"""
+    minute_intervals = {"1m", "2m", "5m", "15m", "30m", "60m", "90m"}
+    if interval not in minute_intervals:
+        return "如果下载失败，请检查标的代码、网络连接或数据源可用性。"
+    return (
+        f"Yahoo 的 {interval} 分钟级历史数据通常只能覆盖最近约 60 天。"
+        f" 当前请求 period={period} 若超过该窗口，建议改用 60d、提高K线周期，或切换数据源。"
+    )
+
+
 def download_symbol_data(symbol, interval="15m", period="60d"):
     """下载单个标的历史数据。"""
     import yfinance as yf
@@ -32,6 +44,7 @@ def download_symbol_data(symbol, interval="15m", period="60d"):
     
     if df.empty:
         print("❌ 无法获取MSTU数据，尝试用缓存...")
+        print(f"   {build_intraday_limit_hint(interval=interval, period=period)}")
         return None
     
     # 保存CSV
@@ -54,10 +67,86 @@ def download_market_data(interval="15m", period="60d"):
     约定：
     - MSTU: execution feed
     - MSTR: signal feed
+    - BTC: daily tone feed
     """
     return {
         "mstu": download_symbol_data("MSTU", interval=interval, period=period),
         "mstr": download_symbol_data("MSTR", interval=interval, period=period),
+        "btc": download_symbol_data(config.BTC_SYMBOL, interval=interval, period=period),
+    }
+
+
+def evaluate_daily_tone_snapshot(
+    *,
+    mstr_change_pct: float,
+    mstr_ema_bullish: bool,
+    mstr_macd_bullish: bool,
+    mstr_bull_structure_weak: bool,
+    btc_change_pct: float,
+    btc_ema_bullish: bool,
+    btc_price_above_fast: bool,
+    bullish_forward_bias: float = config.DAILY_TONE_BULLISH_FORWARD_BIAS,
+    bearish_reverse_bias: float = config.DAILY_TONE_BEARISH_REVERSE_BIAS,
+) -> dict:
+    """用回测快照计算 daily tone。
+
+    返回值与实时 fetcher.calculate_daily_tone 的核心字段保持一致，
+    但输入全部来自回测中的历史 bar，避免依赖实时接口。
+    """
+    tone = "neutral"
+    forward_bias = 0.0
+    reverse_bias = 0.0
+    reason_parts = []
+
+    btc_trend = "neutral"
+    if btc_ema_bullish and btc_price_above_fast and btc_change_pct > 0:
+        btc_trend = "bullish"
+    elif (not btc_ema_bullish) and (not btc_price_above_fast) and btc_change_pct < 0:
+        btc_trend = "bearish"
+
+    if btc_trend == "bullish" and btc_change_pct > 1.0:
+        tone = "bullish"
+        reason_parts.append(f"BTC涨{btc_change_pct:+.1f}%多头结构")
+        if btc_change_pct > 2.0:
+            tone = "bullish_strong"
+            reason_parts.append("(强)")
+    elif btc_trend == "bearish" and btc_change_pct < -1.0:
+        tone = "bearish"
+        reason_parts.append(f"BTC跌{btc_change_pct:+.1f}%空头结构")
+        if btc_change_pct < -2.0:
+            tone = "bearish_strong"
+            reason_parts.append("(强)")
+
+    if tone in ["neutral", "bullish"] and mstr_change_pct > 1.5 and mstr_bull_structure_weak:
+        tone = "bullish_strong" if tone == "bullish" else "bullish"
+        reason_parts.append(f"MSTR高开{mstr_change_pct:+.1f}%")
+    elif tone in ["neutral", "bearish"] and mstr_change_pct < -1.5 and not mstr_bull_structure_weak:
+        tone = "bearish_strong" if tone == "bearish" else "bearish"
+        reason_parts.append(f"MSTR低开{mstr_change_pct:+.1f}%")
+
+    if tone == "neutral" and mstr_ema_bullish and mstr_macd_bullish and btc_ema_bullish:
+        tone = "bullish"
+        reason_parts.append("MSTR+BTC均线共振多头")
+    elif tone == "neutral" and (not mstr_ema_bullish) and (not mstr_macd_bullish) and (not btc_ema_bullish):
+        tone = "bearish"
+        reason_parts.append("MSTR+BTC均线共振空头")
+
+    if tone in ["bullish", "bullish_strong"]:
+        forward_bias = bullish_forward_bias
+        reverse_bias = -0.25
+        if tone == "bullish_strong":
+            forward_bias += 0.25
+    elif tone in ["bearish", "bearish_strong"]:
+        reverse_bias = bearish_reverse_bias
+        forward_bias = -0.25
+        if tone == "bearish_strong":
+            reverse_bias += 0.25
+
+    return {
+        "tone": tone,
+        "forward_bias": round(forward_bias, 2),
+        "reverse_bias": round(reverse_bias, 2),
+        "reason": " | ".join(reason_parts) if reason_parts else "无明显方向信号",
     }
 
 
@@ -489,6 +578,9 @@ class CombinedStrategy(IntradayGapStrategy):
         ('reverse_trigger_threshold', 2.25),
         ('reverse_runup_min', 0.04),
         ('reverse_pullback_min', 0.012),
+        ('enable_macd_enhanced', True),
+        ('enable_btc_tone', True),
+        ('print_summary', True),
         ('printlog', False),
     )
     
@@ -496,6 +588,7 @@ class CombinedStrategy(IntradayGapStrategy):
         # 双标回测时，第二路数据固定视为信号源 MSTR；
         # 如果只传一路数据，则退化为单标模式，方便兼容旧脚本。
         self.signal_data = self.datas[1] if len(self.datas) > 1 else self.datas[0]
+        self.btc_data = self.datas[2] if len(self.datas) > 2 else None
         self.init_session_state()
         self.order = None
         self.buy_price = None
@@ -530,6 +623,18 @@ class CombinedStrategy(IntradayGapStrategy):
         self.current_value = 0.0
         self.peak_value = 0.0
         self.max_drawdown_pct = 0.0
+        self.daily_tone = "neutral"
+        self.tone_forward_bias = 0.0
+        self.tone_reverse_bias = 0.0
+        self.tone_reason = ""
+        self._tone_session_date = None
+        self.tone_hits = {
+            "bullish_strong": 0,
+            "bullish": 0,
+            "neutral": 0,
+            "bearish": 0,
+            "bearish_strong": 0,
+        }
         self.signal_hits = {
             "morning_star": 0,
             "evening_star": 0,
@@ -579,6 +684,12 @@ class CombinedStrategy(IntradayGapStrategy):
         self.adx = bt.ind.ADX(self.signal_data, period=14)
         self.k = bt.ind.Stochastic(self.signal_data).percK
         self.d = bt.ind.Stochastic(self.signal_data).percD
+        if self.btc_data is not None:
+            self.btc_ema_fast = bt.ind.EMA(self.btc_data.close, period=config.BTC_EMA_FAST_PERIOD)
+            self.btc_ema_slow = bt.ind.EMA(self.btc_data.close, period=config.BTC_EMA_SLOW_PERIOD)
+        else:
+            self.btc_ema_fast = None
+            self.btc_ema_slow = None
 
     def start(self):
         # 只把可动用现金作为 T 仓回测本金，底仓收益不计入策略收益。
@@ -698,6 +809,36 @@ class CombinedStrategy(IntradayGapStrategy):
                     macd_cross_position = "below_zero_dead"  # 零轴下方死叉
         
         return macd_divergence, macd_hist_trend, macd_cross_position
+
+    def _calculate_backtest_daily_tone(self, gap_pct: float, bull_structure_weak: bool) -> dict:
+        """基于当前 MSTR/BTC bar 计算回测内 daily tone。"""
+        if not self.params.enable_btc_tone or self.btc_data is None:
+            return {
+                "tone": "neutral",
+                "forward_bias": 0.0,
+                "reverse_bias": 0.0,
+                "reason": "BTC tone disabled",
+            }
+
+        btc_close = float(self.btc_data.close[0]) if not np.isnan(self.btc_data.close[0]) else 0.0
+        btc_prev_close = float(self.btc_data.close[-1]) if len(self.btc_data) > 1 and not np.isnan(self.btc_data.close[-1]) else btc_close
+        btc_change_pct = ((btc_close - btc_prev_close) / btc_prev_close * 100) if btc_prev_close > 0 else 0.0
+
+        btc_fast = float(self.btc_ema_fast[0]) if self.btc_ema_fast is not None and not np.isnan(self.btc_ema_fast[0]) else btc_close
+        btc_slow = float(self.btc_ema_slow[0]) if self.btc_ema_slow is not None and not np.isnan(self.btc_ema_slow[0]) else btc_close
+
+        mstr_ema_bullish = self.ema9[0] > self.ema21[0] if not np.isnan(self.ema21[0]) else True
+        mstr_macd_bullish = self.macd.lines.macd[0] > self.macd.lines.signal[0] if not np.isnan(self.macd.lines.signal[0]) else True
+
+        return evaluate_daily_tone_snapshot(
+            mstr_change_pct=gap_pct * 100,
+            mstr_ema_bullish=bool(mstr_ema_bullish),
+            mstr_macd_bullish=bool(mstr_macd_bullish),
+            mstr_bull_structure_weak=bool(bull_structure_weak),
+            btc_change_pct=btc_change_pct,
+            btc_ema_bullish=btc_fast > btc_slow,
+            btc_price_above_fast=btc_close > btc_fast,
+        )
     
     def _mark_to_market(self, current_price: float):
         """T 仓净值：现金 + 正向T市值 - 反向T回补负债。"""
@@ -874,12 +1015,26 @@ class CombinedStrategy(IntradayGapStrategy):
         bull_structure_strong = (
             bull_structure_weak and persistent_structure and short_bottom_rising and long_bottom_rising
         )
+        tone_data = self._calculate_backtest_daily_tone(gap_pct, bull_structure_weak)
+        self.daily_tone = tone_data["tone"]
+        self.tone_forward_bias = tone_data["forward_bias"]
+        self.tone_reverse_bias = tone_data["reverse_bias"]
+        self.tone_reason = tone_data["reason"]
+        if current_date != self._tone_session_date:
+            self.tone_hits[self.daily_tone] += 1
+            self._tone_session_date = current_date
         volume_ratio = self.signal_data.volume[0] / self.volume_sma[0] if self.volume_sma[0] else 1.0
         vwap_cross_up = self.signal_data.close[-1] <= self.vwap[-1] and signal_price > self.vwap[0]
         gap_too_big = gap_pct > 0.05
+        effective_gap_down_pct = self.params.gap_down_pct + (self.tone_forward_bias * 0.01)
+        effective_gap_up_pct = max(0.0, self.params.gap_up_pct - (self.tone_forward_bias * 0.01))
+        effective_reverse_trigger_threshold = self.params.reverse_trigger_threshold - self.tone_reverse_bias
         
         # ===== 计算 MACD 增强信号 =====
-        macd_divergence, macd_hist_trend, macd_cross_position = self._calculate_macd_enhanced(signal_price)
+        if self.params.enable_macd_enhanced:
+            macd_divergence, macd_hist_trend, macd_cross_position = self._calculate_macd_enhanced(signal_price)
+        else:
+            macd_divergence, macd_hist_trend, macd_cross_position = ("none", "neutral", "none")
         macd_buy_score = 0.0
         macd_sell_score = 0.0
         
@@ -989,7 +1144,7 @@ class CombinedStrategy(IntradayGapStrategy):
                 self._close_reverse_t(current_price, current_date)
 
         # ===== 低吸模式 =====
-        if self.t_long_shares == 0 and gap_pct <= self.params.gap_down_pct:
+        if self.t_long_shares == 0 and gap_pct <= effective_gap_down_pct:
             # 强下跌趋势中减少买入（除非超跌反弹信号很强）
             rsi_val = self.rsi[0] if not np.isnan(self.rsi[0]) else 50
             bb_lower = signal_price <= self.boll.lines.bot[0] if not np.isnan(self.boll.lines.bot[0]) else False
@@ -1010,10 +1165,11 @@ class CombinedStrategy(IntradayGapStrategy):
             else:
                 # 非下跌趋势也只做更强的低吸，避免普通回落反复止损
                 # MACD信号纳入综合判断
-                dip_signals = sum([bull_structure_weak, rsi_rebound, kdj_turn_bull, 
+                dip_signals = sum([bull_structure_weak, rsi_rebound, kdj_turn_bull,
                                    macd_divergence == "bottom", macd_hist_trend == "green_shrinking"])
-                if ((rsi_val < 30 and bb_lower and dip_signals >= 1)
-                        or gap_pct <= self.params.gap_down_pct * 1.25):
+                dip_signal_score = dip_signals + self.tone_forward_bias
+                if ((rsi_val < 30 and bb_lower and dip_signal_score >= 1)
+                        or gap_pct <= effective_gap_down_pct * 1.25):
                     if self._open_forward_t(current_price, self.params.trade_amount, "dip", current_date):
                         return
         
@@ -1033,6 +1189,7 @@ class CombinedStrategy(IntradayGapStrategy):
                 momentum_bias += 0.5
             if rsi_rebound:
                 momentum_bias += 0.25
+            momentum_bias += self.tone_forward_bias
             
             # MACD 增强信号纳入追涨评分
             if macd_cross_position in ["above_zero_golden", "below_zero_golden"]:
@@ -1040,7 +1197,7 @@ class CombinedStrategy(IntradayGapStrategy):
             if macd_hist_trend == "red_to_green":
                 momentum_bias += 0.25
 
-            gap_momentum_ok = self.params.gap_up_pct <= gap_pct <= self.params.max_chase_pct
+            gap_momentum_ok = effective_gap_up_pct <= gap_pct <= self.params.max_chase_pct
             intraday_breakout_ok = (
                 run_up_from_open >= self.params.momentum_runup_min
                 and intraday_position >= self.params.momentum_intraday_position_min
@@ -1104,10 +1261,12 @@ class CombinedStrategy(IntradayGapStrategy):
             # 顶部拐头需要至少一个“动能衰减”确认，避免单靠价格位置去猜顶部。
             # MACD 顶背离和死叉也作为动能衰减信号
             reverse_confirmation = rsi_top_fade or kdj_turn_bear or macd_divergence == "top" or macd_cross_position in ["above_zero_dead", "below_zero_dead"]
-            if reverse_gate and reverse_confirmation and reverse_bias >= self.params.reverse_trigger_threshold:
+            if reverse_gate and reverse_confirmation and reverse_bias >= effective_reverse_trigger_threshold:
                 self._open_reverse_t(current_price, current_date)
     
     def stop(self):
+        if not self.params.print_summary:
+            return
         win_rate = self.win_count / self.trade_count * 100 if self.trade_count > 0 else 0
         dip_win_rate = self.dip_wins / self.dip_trades * 100 if self.dip_trades > 0 else 0
         mom_win_rate = self.mom_wins / self.mom_trades * 100 if self.mom_trades > 0 else 0
@@ -1124,6 +1283,12 @@ class CombinedStrategy(IntradayGapStrategy):
         print(f'  交易: {self.dip_trades}次 | 胜率: {dip_win_rate:.1f}%')
         print(f'--- 追涨模式 ---')
         print(f'  交易: {self.mom_trades}次 | 胜率: {mom_win_rate:.1f}%')
+        print(f'--- Daily Tone ---')
+        print(f'  bullish_strong: {self.tone_hits["bullish_strong"]}')
+        print(f'  bullish: {self.tone_hits["bullish"]}')
+        print(f'  neutral: {self.tone_hits["neutral"]}')
+        print(f'  bearish: {self.tone_hits["bearish"]}')
+        print(f'  bearish_strong: {self.tone_hits["bearish_strong"]}')
         print(f'--- 原始信号命中 ---')
         for name in ["morning_star", "evening_star", "inside_bar_breakout_up", "inside_bar_breakout_down", "rsi_rebound", "kdj_turn_bull", "vwap_cross_up", "bull_structure_weak", "bull_structure_strong"]:
             print(f'  {name}: {self.signal_hits[name]}')
@@ -1150,7 +1315,7 @@ def run_backtest(strategy_class, csv_path=None, cash=1400, commission=0.001,
 
     csv_path 可以是：
     - 单个 CSV 路径：兼容旧版单标回测
-    - {"mstu": "...", "mstr": "..."}：推荐的双标回测模式
+    - {"mstu": "...", "mstr": "...", "btc": "..."}：推荐的三标回测模式
     """
     cerebro = bt.Cerebro()
 
@@ -1158,6 +1323,7 @@ def run_backtest(strategy_class, csv_path=None, cash=1400, commission=0.001,
     if isinstance(csv_path, dict):
         mstu_path = csv_path.get("mstu")
         mstr_path = csv_path.get("mstr")
+        btc_path = csv_path.get("btc")
         if not (mstu_path and os.path.exists(mstu_path) and mstr_path and os.path.exists(mstr_path)):
             print("❌ 双标的数据文件不完整")
             return
@@ -1170,6 +1336,8 @@ def run_backtest(strategy_class, csv_path=None, cash=1400, commission=0.001,
         # adddata 顺序不能改：data0=MSTU 执行，data1=MSTR 信号
         cerebro.adddata(read_feed(mstu_path, "MSTU"))
         cerebro.adddata(read_feed(mstr_path, "MSTR"))
+        if btc_path and os.path.exists(btc_path):
+            cerebro.adddata(read_feed(btc_path, "BTC"))
     elif csv_path and os.path.exists(csv_path):
         df = pd.read_csv(csv_path, index_col=0)
         df.index = pd.to_datetime(df.index, utc=True).tz_convert(None)
@@ -1296,13 +1464,61 @@ def collect_backtest_metrics(strategy_class, csv_path=None, cash=1400, commissio
         metrics["cross_session_t_count"] = strat.cross_session_t_count
     if hasattr(strat, "signal_hits"):
         metrics["signal_hits"] = dict(strat.signal_hits)
+    if hasattr(strat, "tone_hits"):
+        metrics["tone_hits"] = dict(strat.tone_hits)
+        metrics["daily_tone"] = getattr(strat, "daily_tone", "neutral")
     return metrics
+
+
+def run_quadrant_experiment(csv_path, cash=1400, commission=0.001) -> dict:
+    """运行四象限实验：baseline / macd_only / btc_only / macd_plus_btc。"""
+    variants = {
+        "baseline": {"enable_macd_enhanced": False, "enable_btc_tone": False, "print_summary": False},
+        "macd_only": {"enable_macd_enhanced": True, "enable_btc_tone": False, "print_summary": False},
+        "btc_only": {"enable_macd_enhanced": False, "enable_btc_tone": True, "print_summary": False},
+        "macd_plus_btc": {"enable_macd_enhanced": True, "enable_btc_tone": True, "print_summary": False},
+    }
+
+    result = {
+        "experiment": "quadrant",
+        "csv": csv_path,
+        "variants": {},
+    }
+
+    for name, params in variants.items():
+        metrics = collect_backtest_metrics(
+            CombinedStrategy,
+            csv_path=csv_path,
+            cash=cash,
+            commission=commission,
+            strategy_params=params,
+        )
+        result["variants"][name] = {
+            "params": params,
+            **metrics,
+        }
+
+    return result
+
+
+def save_experiment_result(result: dict, output_dir: str = None, filename: str = None) -> str:
+    """保存实验结果到磁盘，返回输出路径。"""
+    output_dir = output_dir or os.path.join(os.path.dirname(__file__), "reports")
+    os.makedirs(output_dir, exist_ok=True)
+    if filename is None:
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        filename = f"{result.get('experiment', 'experiment')}-{stamp}.json"
+    output_path = os.path.join(output_dir, filename)
+    with open(output_path, "w") as f:
+        json.dump(result, f, ensure_ascii=False, indent=2)
+    return output_path
 
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--strategy", choices=["dip", "momentum", "combined", "all"], default="all")
+    parser.add_argument("--experiment", choices=["quadrant"], default=None)
     parser.add_argument("--download", action="store_true", help="重新下载数据")
     parser.add_argument("--interval", default="15m", help="下载数据周期，默认15m")
     parser.add_argument("--period", default="60d", help="下载历史范围，默认60d")
@@ -1332,6 +1548,20 @@ if __name__ == "__main__":
                 print("无法获取数据，退出")
                 sys.exit(1)
     
+    if args.experiment == "quadrant":
+        print("\n" + "🧪" * 30)
+        experiment_result = run_quadrant_experiment(dual_csv)
+        output_path = save_experiment_result(experiment_result)
+        print("Quadrant experiment summary:")
+        for name, payload in experiment_result["variants"].items():
+            print(
+                f"  {name}: return={payload['return_pct']:+.2f}% "
+                f"win_rate={payload['win_rate']:.2f}% "
+                f"drawdown={payload['max_drawdown']}"
+            )
+        print(f"Saved full result to: {output_path}")
+        sys.exit(0)
+
     # 运行回测
     if args.strategy in ["dip", "all"]:
         print("\n" + "🔶" * 30)

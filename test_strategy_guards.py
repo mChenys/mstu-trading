@@ -192,6 +192,161 @@ class StrategyGuardsTest(unittest.TestCase):
         self.assertEqual(result["action"], "BUY")
         self.assertTrue(result["mstr_trend_ok"])
 
+    def test_premarket_momentum_threshold_is_relaxed_by_bullish_tone(self):
+        self.write_position({
+            "holding_shares": 0,
+            "buy_price": 0,
+            "target_price": 0,
+            "stop_price": 0,
+            "position_source": "",
+            "daily_ops_count": 0,
+            "daily_pnl": 0.0,
+            "available_cash": 1400.0,
+            "last_reset_date": "2026-04-22",
+        })
+
+        quote = {
+            "price": 7.35,
+            "prev_close": 7.25,
+            "high": 7.4,
+            "low": 7.2,
+            "volume": 1_000_000,
+            "session": "premarket",
+            "mstr": {
+                "mstr_price": 380.0,
+                "mstr_prev_close": 376.0,  # +1.06%
+                "mstr_high": 381.0,
+                "mstr_low": 375.0,
+                "mstr_volume": 60_000_000,
+                "mstr_ema_bullish": True,
+                "mstr_macd_bullish": True,
+                "mstr_vwap_momentum_ready": True,
+                "mstr_volume_expanding": True,
+                "mstr_gap_too_big": False,
+                "mstr_bull_structure_weak": True,
+            },
+            "mstr_trend": {},
+        }
+
+        with patch("strategy.calculate_daily_tone", return_value={
+            "tone": "bullish",
+            "forward_bias": 0.25,
+            "reverse_bias": -0.25,
+            "reason": "bullish test tone",
+        }):
+            strategy = TradingStrategy()
+            result = strategy.analyze(quote)
+
+        self.assertEqual(result["action"], "BUY")
+        self.assertEqual(result["position_source"], "premarket-momentum")
+        self.assertEqual(result["daily_tone"], "bullish")
+
+    def test_regular_buy_threshold_is_relaxed_by_bullish_tone(self):
+        self.write_position({
+            "holding_shares": 0,
+            "buy_price": 0,
+            "target_price": 0,
+            "stop_price": 0,
+            "position_source": "",
+            "daily_ops_count": 0,
+            "daily_pnl": 0.0,
+            "available_cash": 1400.0,
+            "last_reset_date": "2026-04-22",
+        })
+
+        fake_now = datetime(2026, 4, 22, 14, 15, tzinfo=timezone.utc)
+        quote = {
+            "price": 7.35,
+            "prev_close": 7.3,
+            "high": 7.4,
+            "low": 7.2,
+            "volume": 1_000_000,
+            "session": "regular",
+            "mstr_trend": {},
+        }
+
+        with patch("strategy.datetime") as mock_dt, \
+             patch("strategy.calculate_daily_tone", return_value={
+                 "tone": "bullish",
+                 "forward_bias": 0.25,
+                 "reverse_bias": -0.25,
+                 "reason": "bullish test tone",
+             }), \
+             patch.object(TradingStrategy, "_analyze_trend", return_value=([], "neutral")), \
+             patch.object(TradingStrategy, "_analyze_volume", return_value=([], {"buy": 1.0, "sell": 0.0})), \
+             patch.object(TradingStrategy, "_analyze_price_position", return_value=([], {"buy": 0.8, "sell": 0.0})), \
+             patch.object(TradingStrategy, "_is_regular_trade_window_open", return_value=True):
+            mock_dt.now.return_value = fake_now
+            strategy = TradingStrategy()
+            result = strategy.analyze(quote)
+
+        self.assertEqual(result["action"], "BUY")
+        self.assertEqual(result["daily_tone"], "bullish")
+        self.assertGreaterEqual(result["buy_score"], 1.8)
+
+    def test_regular_analysis_returns_score_breakdown_and_decision_trace(self):
+        self.write_position({
+            "holding_shares": 0,
+            "buy_price": 0,
+            "target_price": 0,
+            "stop_price": 0,
+            "position_source": "",
+            "daily_ops_count": 0,
+            "daily_pnl": 0.0,
+            "available_cash": 1400.0,
+            "last_reset_date": "2026-04-22",
+        })
+
+        fake_now = datetime(2026, 4, 22, 14, 15, tzinfo=timezone.utc)
+        quote = {
+            "price": 7.35,
+            "prev_close": 7.3,
+            "high": 7.4,
+            "low": 7.2,
+            "volume": 1_000_000,
+            "session": "regular",
+            "mstr": {
+                "mstr_price": 380.0,
+                "mstr_prev_close": 376.0,
+                "mstr_high": 381.0,
+                "mstr_low": 375.0,
+                "mstr_volume": 60_000_000,
+                "mstr_change_pct": 1.1,
+                "mstr_ema_bullish": True,
+                "mstr_macd_bullish": True,
+                "mstr_bull_structure_weak": True,
+                "mstr_bull_structure_strong": False,
+                "mstr_vwap_momentum_ready": True,
+                "mstr_volume_expanding": True,
+                "mstr_gap_too_big": False,
+                "mstr_macd_divergence": "bottom",
+                "mstr_macd_hist_trend": "green_shrinking",
+                "mstr_macd_cross_position": "above_zero_golden",
+            },
+            "mstr_trend": {},
+        }
+
+        with patch("strategy.datetime") as mock_dt, \
+             patch("strategy.calculate_daily_tone", return_value={
+                 "tone": "bullish",
+                 "forward_bias": 0.25,
+                 "reverse_bias": -0.25,
+                 "reason": "bullish test tone",
+             }), \
+             patch.object(TradingStrategy, "_analyze_trend", return_value=([], "neutral")), \
+             patch.object(TradingStrategy, "_analyze_volume", return_value=([], {"buy": 0.5, "sell": 0.0})), \
+             patch.object(TradingStrategy, "_analyze_price_position", return_value=([], {"buy": 0.5, "sell": 0.0})), \
+             patch.object(TradingStrategy, "_is_regular_trade_window_open", return_value=True):
+            mock_dt.now.return_value = fake_now
+            strategy = TradingStrategy()
+            result = strategy.analyze(quote)
+
+        self.assertIn("score_breakdown", result)
+        self.assertIn("decision_trace", result)
+        self.assertIn("mstr", result["score_breakdown"])
+        self.assertIn("macd_enhanced", result["score_breakdown"]["mstr"])
+        self.assertTrue(any("buy_score" in item for item in result["decision_trace"]))
+
 
 if __name__ == "__main__":
     unittest.main()

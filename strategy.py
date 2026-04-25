@@ -177,6 +177,18 @@ class TradingStrategy:
         if self.last_reset_date != today:
             self.reset_daily()
 
+    def _pct_with_forward_tone(self, base_pct: float) -> float:
+        """把 daily tone 的正向偏置折算到百分比阈值上。"""
+        return base_pct - (self.tone_forward_bias / 100.0)
+
+    def _score_threshold_with_forward_tone(self, base_threshold: float) -> float:
+        """上涨基调时，允许更低一点的正向开仓分数门槛。"""
+        return max(0.0, base_threshold - self.tone_forward_bias)
+
+    def _score_threshold_with_reverse_tone(self, base_threshold: float) -> float:
+        """下跌基调时，允许更低一点的卖出/反向动作门槛。"""
+        return max(0.0, base_threshold - self.tone_reverse_bias)
+
     def _is_regular_trade_window_open(self) -> bool:
         """盘中是否允许开新仓。开盘/收盘前后禁做T。"""
         now_bj = self._beijing_now()
@@ -331,6 +343,8 @@ class TradingStrategy:
             }
         
         gap_pct = (ref_price - ref_prev_close) / ref_prev_close if ref_prev_close else 0
+        effective_dip_threshold = self._pct_with_forward_tone(config.PREMARKET_BUY_GAP_DOWN)
+        effective_momentum_threshold = self._pct_with_forward_tone(config.PREMARKET_MOMENTUM_GAP_UP)
         signals = []
         mstr = quote.get("mstr", {})
         bull_structure_weak = mstr.get("mstr_bull_structure_weak", True)
@@ -365,7 +379,7 @@ class TradingStrategy:
                 pass
         
         # ========== 低吸模式 (Dip Buy) ==========
-        if config.PREMARKET_BUY_ENABLED and gap_pct <= config.PREMARKET_BUY_GAP_DOWN:
+        if config.PREMARKET_BUY_ENABLED and gap_pct <= effective_dip_threshold:
             if not long_trend_ok and not mstr.get("mstr_rsi_bottom_rebound", False):
                 signals.append("🧱 MSTR 牛熊线弱结构未建立，盘前低吸继续观察")
                 return {
@@ -382,7 +396,7 @@ class TradingStrategy:
                 signals.append(f"🟢 低吸: {ref_symbol}盘前低开{gap_pct*100:+.1f}%")
                 
                 # 急跌加仓
-                strength = "强买入" if gap_pct <= config.PREMARKET_BUY_GAP_DOWN * 1.5 else "买入"
+                strength = "强买入" if gap_pct <= effective_dip_threshold * 1.5 else "买入"
                 
                 return {
                     "action": "BUY",
@@ -392,6 +406,9 @@ class TradingStrategy:
                     "stop_price": stop,
                     "position_source": "premarket-dip",
                     "gap_pct": round(gap_pct * 100, 2),
+                    "daily_tone": self.daily_tone,
+                    "tone_reason": self.tone_reason,
+                    "effective_dip_threshold_pct": round(effective_dip_threshold * 100, 2),
                     "signals": signals,
                     "reason": f"🟢 {strength}: {ref_symbol}盘前低开{gap_pct*100:+.1f}%，在MSTU买入{buy_shares}股，目标${target:.2f}"
                 }
@@ -412,7 +429,7 @@ class TradingStrategy:
                 buy_shares = max_affordable_shares(min(config.MOMENTUM_MAX_BUY_AMT, self.available_cash), price, min_shares=50)
                 if buy_shares >= 50:
                     # 涨幅达标触发
-                    if gap_pct >= config.PREMARKET_MOMENTUM_GAP_UP:
+                    if gap_pct >= effective_momentum_threshold:
                         target = round(price * (1 + config.MOMENTUM_PROFIT_PCT), 2)
                         stop = round(price * (1 - config.MOMENTUM_STOP_PCT), 2)
                         signals.append(f"📈 追涨: {ref_symbol}盘前高开{gap_pct*100:+.1f}%，趋势延续")
@@ -425,12 +442,15 @@ class TradingStrategy:
                             "stop_price": stop,
                             "position_source": "premarket-momentum",
                             "gap_pct": round(gap_pct * 100, 2),
+                            "daily_tone": self.daily_tone,
+                            "tone_reason": self.tone_reason,
+                            "effective_momentum_threshold_pct": round(effective_momentum_threshold * 100, 2),
                             "signals": signals,
                             "reason": f"📈 追涨: {ref_symbol}盘前高开{gap_pct*100:+.1f}%，顺势在MSTU买入{buy_shares}股，快止盈${target:.2f}"
                         }
                     else:
                         # 涨幅不够强，观察
-                        signals.append(f"📈 {ref_symbol}高开{gap_pct*100:+.1f}%，未达追涨阈值({config.PREMARKET_MOMENTUM_GAP_UP*100:+.0f}%)")
+                        signals.append(f"📈 {ref_symbol}高开{gap_pct*100:+.1f}%，未达追涨阈值({effective_momentum_threshold*100:+.2f}%)")
             else:
                 signals.append(f"⚠️ {ref_symbol}高开{gap_pct*100:+.1f}%，涨幅过大不追")
         
@@ -439,6 +459,10 @@ class TradingStrategy:
             "action": "PREMARKET",
             "price": round(price, 2),
             "gap_pct": round(gap_pct * 100, 2),
+            "daily_tone": self.daily_tone,
+            "tone_reason": self.tone_reason,
+            "effective_dip_threshold_pct": round(effective_dip_threshold * 100, 2),
+            "effective_momentum_threshold_pct": round(effective_momentum_threshold * 100, 2),
             "signals": signals,
             "reason": f"盘前参考{ref_symbol}{gap_pct*100:+.1f}%，无明确信号"
         }
@@ -473,6 +497,8 @@ class TradingStrategy:
         
         
         change_pct = (ref_price - ref_prev_close) / ref_prev_close if ref_prev_close else 0
+        effective_dip_threshold = self._pct_with_forward_tone(config.OVERNIGHT_BUY_DROP)
+        effective_momentum_threshold = self._pct_with_forward_tone(config.OVERNIGHT_MOMENTUM_RISE)
         signals = []
         mstr = quote.get("mstr", {})
         bull_structure_weak = mstr.get("mstr_bull_structure_weak", True)
@@ -488,7 +514,7 @@ class TradingStrategy:
         )
         
         # ========== 低吸模式 (Dip Buy) ==========
-        if config.OVERNIGHT_BUY_ENABLED and change_pct <= config.OVERNIGHT_BUY_DROP:
+        if config.OVERNIGHT_BUY_ENABLED and change_pct <= effective_dip_threshold:
             if not long_trend_ok and not mstr.get("mstr_rsi_bottom_rebound", False):
                 signals.append("🧱 MSTR 牛熊线弱结构未建立，夜盘低吸继续等待")
                 return {
@@ -512,6 +538,9 @@ class TradingStrategy:
                     "stop_price": stop,
                     "position_source": "overnight-dip",
                     "change_pct": round(change_pct * 100, 2),
+                    "daily_tone": self.daily_tone,
+                    "tone_reason": self.tone_reason,
+                    "effective_dip_threshold_pct": round(effective_dip_threshold * 100, 2),
                     "signals": signals,
                     "reason": f"🟢 低吸: {ref_symbol}夜盘跌{change_pct*100:+.1f}%，在MSTU买入{buy_shares}股，目标${target:.2f}"
                 }
@@ -533,7 +562,7 @@ class TradingStrategy:
                 buy_shares = max_affordable_shares(min(config.MOMENTUM_MAX_BUY_AMT, self.available_cash), price, min_shares=50)
                 if buy_shares >= 50:
                     # 涨幅达标触发
-                    if change_pct >= config.OVERNIGHT_MOMENTUM_RISE:
+                    if change_pct >= effective_momentum_threshold:
                         target = round(price * (1 + config.MOMENTUM_PROFIT_PCT), 2)
                         stop = round(price * (1 - config.MOMENTUM_STOP_PCT), 2)
                         signals.append(f"📈 追涨: {ref_symbol}夜盘涨{change_pct*100:+.1f}%，趋势延续")
@@ -546,12 +575,15 @@ class TradingStrategy:
                             "stop_price": stop,
                             "position_source": "overnight-momentum",
                             "change_pct": round(change_pct * 100, 2),
+                            "daily_tone": self.daily_tone,
+                            "tone_reason": self.tone_reason,
+                            "effective_momentum_threshold_pct": round(effective_momentum_threshold * 100, 2),
                             "signals": signals,
                             "reason": f"📈 追涨: {ref_symbol}夜盘涨{change_pct*100:+.1f}%，顺势在MSTU买入{buy_shares}股，快止盈${target:.2f}"
                         }
                     else:
                         # 涨幅不够强，观察
-                        signals.append(f"📈 {ref_symbol}涨{change_pct*100:+.1f}%，未达追涨阈值({config.OVERNIGHT_MOMENTUM_RISE*100:+.0f}%)")
+                        signals.append(f"📈 {ref_symbol}涨{change_pct*100:+.1f}%，未达追涨阈值({effective_momentum_threshold*100:+.2f}%)")
             else:
                 signals.append(f"⚠️ {ref_symbol}涨{change_pct*100:+.1f}%，涨幅过大不追")
         
@@ -564,6 +596,10 @@ class TradingStrategy:
             "action": "OVERNIGHT",
             "price": round(price, 2),
             "change_pct": round(change_pct * 100, 2),
+            "daily_tone": self.daily_tone,
+            "tone_reason": self.tone_reason,
+            "effective_dip_threshold_pct": round(effective_dip_threshold * 100, 2),
+            "effective_momentum_threshold_pct": round(effective_momentum_threshold * 100, 2),
             "signals": signals,
             "reason": f"夜盘参考{ref_symbol}{change_pct*100:+.1f}%，无明确信号"
         }
@@ -599,6 +635,7 @@ class TradingStrategy:
         mstr_signal = ""
         mstr_extra_signals = []
         mstr_score = {"buy": 0, "sell": 0}
+        mstr_breakdown = {"buy": 0.0, "sell": 0.0, "macd_enhanced": {"buy": 0.0, "sell": 0.0}}
         mstr_trend_ok = True
         mstr_trend_note = ""
         
@@ -656,16 +693,20 @@ class TradingStrategy:
             if mstr_change > 2:
                 mstr_signal = f"📈 MSTR涨{mstr_change:+.1f}%，MSTU看多"
                 mstr_score["buy"] += 2
+                mstr_breakdown["buy"] += 2
             elif mstr_change > 1:
                 mstr_signal = f"📊 MSTR涨{mstr_change:+.1f}%，偏多"
                 mstr_score["buy"] += 1
+                mstr_breakdown["buy"] += 1
             # MSTR跌>2% → MSTU看空
             elif mstr_change < -2:
                 mstr_signal = f"📉 MSTR跌{mstr_change:.1f}%，MSTU看空"
                 mstr_score["sell"] += 2
+                mstr_breakdown["sell"] += 2
             elif mstr_change < -1:
                 mstr_signal = f"📊 MSTR跌{mstr_change:.1f}%，偏空"
                 mstr_score["sell"] += 1
+                mstr_breakdown["sell"] += 1
 
             # 实时策略补齐回测里的趋势确认：
             # EMA / MACD 现在不再作为“硬门槛”，而是作为分时动能确认的一部分。
@@ -677,6 +718,7 @@ class TradingStrategy:
                     if ema_bullish and macd_bullish:
                         mstr_trend_ok = True
                         mstr_score["buy"] += 1.25
+                        mstr_breakdown["buy"] += 1.25
                         mstr_trend_note = (
                             f"📐 MSTR趋势确认: EMA{config.MSTR_FAST_EMA_PERIOD}>{config.MSTR_SLOW_EMA_PERIOD}"
                             " 且 MACD 多头"
@@ -684,6 +726,7 @@ class TradingStrategy:
                     else:
                         mstr_trend_ok = False
                         mstr_score["sell"] += 0.5
+                        mstr_breakdown["sell"] += 0.5
                         weak_parts = []
                         if not ema_bullish:
                             weak_parts.append(
@@ -699,15 +742,19 @@ class TradingStrategy:
             # 3. K线形态只做辅助提示
             if mstr.get("mstr_bull_structure_strong"):
                 mstr_score["buy"] += 0.75
+                mstr_breakdown["buy"] += 0.75
                 signals_hint = "🟨 MSTR强结构: 牛熊线持续走强且双线抬升"
             elif mstr.get("mstr_bull_structure_weak"):
                 mstr_score["buy"] += 0.35
+                mstr_breakdown["buy"] += 0.35
                 signals_hint = "🟨 MSTR弱结构: 短线底轨站上长线底轨，价格站上长期牛线"
             else:
                 mstr_score["sell"] += 0.5
+                mstr_breakdown["sell"] += 0.5
                 signals_hint = "🟦 MSTR结构偏弱: 牛熊线未完成有效上移"
             if mstr.get("mstr_vwap_momentum_ready") and mstr.get("mstr_volume_expanding") and not mstr.get("mstr_gap_too_big"):
                 mstr_score["buy"] += 2.0
+                mstr_breakdown["buy"] += 2.0
                 if mstr.get("mstr_vwap_cross_up"):
                     signals_hint += f" | VWAP上穿 + 量比{mstr.get('mstr_volume_ratio', 0):.1f}"
                 else:
@@ -716,12 +763,15 @@ class TradingStrategy:
                     )
             elif mstr.get("mstr_vwap_cross_down"):
                 mstr_score["sell"] += 1.5
+                mstr_breakdown["sell"] += 1.5
                 signals_hint += " | 跌回VWAP下方"
             if mstr.get("mstr_rsi_bottom_rebound"):
                 mstr_score["buy"] += 0.75
+                mstr_breakdown["buy"] += 0.75
                 signals_hint += " | RSI底部反弹"
             if mstr.get("mstr_kdj_turn_bull"):
                 mstr_score["buy"] += 1.0
+                mstr_breakdown["buy"] += 1.0
                 signals_hint += " | KDJ变盘转多"
             mstr_extra_signals.append(signals_hint)
 
@@ -730,15 +780,19 @@ class TradingStrategy:
                 if mstr.get("mstr_morning_star"):
                     # 形态只做辅助提示，不再主导评分。
                     mstr_score["buy"] += 0.25
+                    mstr_breakdown["buy"] += 0.25
                     pattern_signals.append("🌅 早晨之星")
                 if mstr.get("mstr_inside_bar_breakout_up"):
                     mstr_score["buy"] += 0.25
+                    mstr_breakdown["buy"] += 0.25
                     pattern_signals.append("📈 孕线向上突破")
                 if mstr.get("mstr_evening_star"):
                     mstr_score["sell"] += 0.25
+                    mstr_breakdown["sell"] += 0.25
                     pattern_signals.append("🌇 黄昏之星")
                 if mstr.get("mstr_inside_bar_breakout_down"):
                     mstr_score["sell"] += 0.25
+                    mstr_breakdown["sell"] += 0.25
                     pattern_signals.append("📉 孕线向下突破")
                 if pattern_signals:
                     mstr_extra_signals.append("🕯 MSTR形态辅助: " + " | ".join(pattern_signals))
@@ -753,37 +807,57 @@ class TradingStrategy:
             # 功能1: 顶背离/底背离
             if macd_div == "bottom":
                 mstr_score["buy"] += 1.5
+                mstr_breakdown["buy"] += 1.5
+                mstr_breakdown["macd_enhanced"]["buy"] += 1.5
                 macd_detail_extra.append("🎯 MACD底背离：价格新低但MACD未新低，反弹信号")
             elif macd_div == "top":
                 mstr_score["sell"] += 1.5
+                mstr_breakdown["sell"] += 1.5
+                mstr_breakdown["macd_enhanced"]["sell"] += 1.5
                 macd_detail_extra.append("⚠️ MACD顶背离：价格新高但MACD未新高，调整信号")
             
             # 功能2: 柱状图变化趋势
             if macd_trend == "green_shrinking":
                 mstr_score["buy"] += 1.0
+                mstr_breakdown["buy"] += 1.0
+                mstr_breakdown["macd_enhanced"]["buy"] += 1.0
                 macd_detail_extra.append("📊 MACD绿柱连续缩短：空头衰竭")
             elif macd_trend == "red_shrinking":
                 mstr_score["sell"] += 1.0
+                mstr_breakdown["sell"] += 1.0
+                mstr_breakdown["macd_enhanced"]["sell"] += 1.0
                 macd_detail_extra.append("📊 MACD红柱连续缩短：多头衰竭")
             elif macd_trend == "red_to_green":
                 mstr_score["buy"] += 0.75
+                mstr_breakdown["buy"] += 0.75
+                mstr_breakdown["macd_enhanced"]["buy"] += 0.75
                 macd_detail_extra.append("📊 MACD绿转红：金叉信号")
             elif macd_trend == "green_to_red":
                 mstr_score["sell"] += 0.75
+                mstr_breakdown["sell"] += 0.75
+                mstr_breakdown["macd_enhanced"]["sell"] += 0.75
                 macd_detail_extra.append("📊 MACD红转绿：死叉信号")
             
             # 功能3: 金叉/死叉位置判断
             if macd_cross == "above_zero_golden":
                 mstr_score["buy"] += 1.5
+                mstr_breakdown["buy"] += 1.5
+                mstr_breakdown["macd_enhanced"]["buy"] += 1.5
                 macd_detail_extra.append("📈 MACD零轴上方金叉：强买入信号")
             elif macd_cross == "below_zero_golden":
                 mstr_score["buy"] += 0.75
+                mstr_breakdown["buy"] += 0.75
+                mstr_breakdown["macd_enhanced"]["buy"] += 0.75
                 macd_detail_extra.append("📈 MACD零轴下方金叉：弱买入信号")
             elif macd_cross == "above_zero_dead":
                 mstr_score["sell"] += 0.75
+                mstr_breakdown["sell"] += 0.75
+                mstr_breakdown["macd_enhanced"]["sell"] += 0.75
                 macd_detail_extra.append("📉 MACD零轴上方死叉：弱卖出信号")
             elif macd_cross == "below_zero_dead":
                 mstr_score["sell"] += 1.5
+                mstr_breakdown["sell"] += 1.5
+                mstr_breakdown["macd_enhanced"]["sell"] += 1.5
                 macd_detail_extra.append("📉 MACD零轴下方死叉：强卖出信号")
             
             if macd_detail_extra:
@@ -862,6 +936,9 @@ class TradingStrategy:
         
         buy_score = position_score.get('buy', 0) + volume_score.get('buy', 0) + enhanced_score.get('buy', 0) + mstr_score.get('buy', 0)
         sell_score = position_score.get('sell', 0) + volume_score.get('sell', 0) + enhanced_score.get('sell', 0) + mstr_score.get('sell', 0)
+        buy_trigger_threshold = self._score_threshold_with_forward_tone(2.0)
+        strong_buy_threshold = self._score_threshold_with_forward_tone(3.0)
+        sell_trigger_threshold = self._score_threshold_with_reverse_tone(2.0)
         
         # 趋势过滤：下跌趋势降低买入信心
         if trend_score == 'down':
@@ -914,7 +991,7 @@ class TradingStrategy:
                 signals.append(f"📋 隔夜持仓浮盈{profit_pct*100:+.1f}%，等反弹出")
         
         # 买入条件：综合得分>=2，有资金，下跌趋势中需要更强信号
-        if action != "SELL" and buy_score >= 2 and self.available_cash >= price * 50:
+        if action != "SELL" and buy_score >= buy_trigger_threshold and self.available_cash >= price * 50:
             if self.holding_shares == 0:  # 盘中只有空仓才买入
                 if not self._is_regular_trade_window_open():
                     action = "TIME_WINDOW_BLOCKED"
@@ -923,11 +1000,11 @@ class TradingStrategy:
                         "blocked_reason": f"收盘前{config.NO_TRADE_MINUTES}分钟禁止新开仓"
                     }
                     signals.append(f"⏱ {result_update['blocked_reason']}")
-                elif trend_score != 'down' or buy_score >= 3:
+                elif trend_score != 'down' or buy_score >= strong_buy_threshold:
                     action = "BUY"
         
         # 卖出条件：有持仓且到达目标
-        if action != "SELL" and self.holding_shares > 0 and sell_score >= 2:
+        if action != "SELL" and self.holding_shares > 0 and sell_score >= sell_trigger_threshold:
             action = "SELL"
         
         result = {
@@ -940,6 +1017,25 @@ class TradingStrategy:
             "mstr_signal": mstr_signal,
             "mstr_trend_note": mstr_trend_note,
             "mstr_trend_ok": mstr_trend_ok,
+            "daily_tone": self.daily_tone,
+            "tone_reason": self.tone_reason,
+            "tone_forward_bias": self.tone_forward_bias,
+            "tone_reverse_bias": self.tone_reverse_bias,
+            "buy_trigger_threshold": round(buy_trigger_threshold, 2),
+            "sell_trigger_threshold": round(sell_trigger_threshold, 2),
+            "score_breakdown": {
+                "position": position_score,
+                "volume": volume_score,
+                "enhanced": enhanced_score,
+                "mstr": mstr_breakdown,
+            },
+            "decision_trace": [
+                f"buy_score={round(buy_score, 2)} vs threshold={round(buy_trigger_threshold, 2)}",
+                f"sell_score={round(sell_score, 2)} vs threshold={round(sell_trigger_threshold, 2)}",
+                f"trend={trend_score}",
+                f"daily_tone={self.daily_tone} forward_bias={self.tone_forward_bias} reverse_bias={self.tone_reverse_bias}",
+                f"mstr_macd_buy={round(mstr_breakdown['macd_enhanced']['buy'], 2)} mstr_macd_sell={round(mstr_breakdown['macd_enhanced']['sell'], 2)}",
+            ],
             "reason": " | ".join(signals) if signals else "正常波动"
         }
         
