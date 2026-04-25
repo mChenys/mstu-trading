@@ -66,6 +66,12 @@ ranges:
 .venv/bin/python market_data_store.py inventory
 ```
 
+For a human-friendly terminal table:
+
+```bash
+.venv/bin/python market_data_store.py inventory --format table
+```
+
 ## Periodic Refresh
 
 Recommended minimum schedule:

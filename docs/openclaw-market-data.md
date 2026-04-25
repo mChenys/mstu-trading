@@ -97,6 +97,12 @@ Use this for a quick human-readable summary of:
 - snapshot counts
 - latest and merged time ranges
 
+For a terminal-friendly table view:
+
+```bash
+.venv/bin/python market_data_store.py inventory --format table
+```
+
 ## Rules For Future Agents
 
 - Do not delete `data/archive/` to reduce repository size.

@@ -292,9 +292,47 @@ def market_data_inventory(data_root: str | os.PathLike | None = None) -> dict:
     }
 
 
+def format_inventory_table(inventory: dict) -> str:
+    """Render inventory summary as a simple plain-text table."""
+    headers = [
+        "symbol",
+        "interval",
+        "snapshots",
+        "latest_rows",
+        "merged_rows",
+        "latest_range",
+        "merged_range",
+    ]
+    rows = []
+    for symbol, intervals in inventory.get("symbols", {}).items():
+        for interval, summary in intervals.items():
+            rows.append([
+                symbol,
+                interval,
+                str(summary.get("archive_snapshots", 0)),
+                str(summary.get("latest_rows", 0)),
+                str(summary.get("merged_rows", 0)),
+                f"{summary.get('latest_start')} -> {summary.get('latest_end')}",
+                f"{summary.get('merged_start')} -> {summary.get('merged_end')}",
+            ])
+
+    widths = [len(h) for h in headers]
+    for row in rows:
+        for idx, cell in enumerate(row):
+            widths[idx] = max(widths[idx], len(cell))
+
+    def render_row(values):
+        return " | ".join(value.ljust(widths[idx]) for idx, value in enumerate(values))
+
+    lines = [render_row(headers), "-+-".join("-" * width for width in widths)]
+    lines.extend(render_row(row) for row in rows)
+    return "\n".join(lines)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Manage archived market data snapshots.")
     parser.add_argument("command", choices=["merge-all", "health-check", "inventory"], help="Operation to run")
+    parser.add_argument("--format", choices=["json", "table"], default="json", help="Output format for inventory command")
     args = parser.parse_args()
 
     if args.command == "merge-all":
@@ -306,7 +344,11 @@ def main() -> None:
         print(json.dumps(health_check_market_data(), ensure_ascii=False, indent=2))
     elif args.command == "inventory":
         import json
-        print(json.dumps(market_data_inventory(), ensure_ascii=False, indent=2))
+        inventory = market_data_inventory()
+        if args.format == "table":
+            print(format_inventory_table(inventory))
+        else:
+            print(json.dumps(inventory, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
