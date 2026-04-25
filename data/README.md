@@ -46,6 +46,17 @@ This will:
 3. refresh `data/latest/`
 4. rebuild `data/merged/`
 
+## Health Check
+
+Before using or modifying market data, agents should validate the layout:
+
+```bash
+.venv/bin/python market_data_store.py health-check
+```
+
+This verifies that `latest/`, `archive/`, and `merged/` all exist and that the
+tracked CSVs are readable.
+
 ## Periodic Refresh
 
 Recommended minimum schedule:

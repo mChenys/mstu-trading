@@ -75,6 +75,15 @@ This will:
 Use this if archive files already exist and you only need to regenerate the
 merged long-history files.
 
+### Run a health check before trusting the data
+
+```bash
+.venv/bin/python market_data_store.py health-check
+```
+
+If this returns `"status": "ok"`, the tracked `latest / archive / merged`
+layers are present and readable.
+
 ## Rules For Future Agents
 
 - Do not delete `data/archive/` to reduce repository size.

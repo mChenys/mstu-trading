@@ -160,15 +160,83 @@ def build_all_merged(data_root: str | os.PathLike | None = None) -> list[str]:
     return built
 
 
+def _csv_time_range(path: str) -> dict:
+    df = _load_csv(path)
+    if df.empty:
+        return {"rows": 0, "start": None, "end": None}
+    return {
+        "rows": len(df),
+        "start": str(df.index.min()),
+        "end": str(df.index.max()),
+    }
+
+
+def health_check_market_data(
+    pairs: list[tuple[str, str]] | None = None,
+    data_root: str | os.PathLike | None = None,
+) -> dict:
+    """Validate that latest/archive/merged layers exist and are readable."""
+    pairs = pairs or [("MSTU", "15m"), ("MSTR", "15m"), ("BTC-USD", "15m")]
+    checks = []
+
+    for symbol, interval in pairs:
+        latest = latest_data_path(symbol, interval, data_root=data_root)
+        merged = merged_data_path(symbol, interval, data_root=data_root)
+        archive_dir = Path(
+            archive_snapshot_path(symbol, interval, "dummy-date", data_root=data_root)
+        ).parent
+
+        if not os.path.exists(latest):
+            checks.append({"symbol": symbol, "interval": interval, "layer": "latest", "status": "missing"})
+        else:
+            checks.append({
+                "symbol": symbol,
+                "interval": interval,
+                "layer": "latest",
+                "status": "ok",
+                **_csv_time_range(latest),
+            })
+
+        archive_files = sorted(archive_dir.glob("*.csv")) if archive_dir.exists() else []
+        if not archive_files:
+            checks.append({"symbol": symbol, "interval": interval, "layer": "archive", "status": "missing"})
+        else:
+            checks.append({
+                "symbol": symbol,
+                "interval": interval,
+                "layer": "archive",
+                "status": "ok",
+                "snapshots": len(archive_files),
+                "latest_snapshot": archive_files[-1].name,
+            })
+
+        if not os.path.exists(merged):
+            checks.append({"symbol": symbol, "interval": interval, "layer": "merged", "status": "missing"})
+        else:
+            checks.append({
+                "symbol": symbol,
+                "interval": interval,
+                "layer": "merged",
+                "status": "ok",
+                **_csv_time_range(merged),
+            })
+
+    status = "ok" if all(item["status"] == "ok" for item in checks) else "error"
+    return {"status": status, "checks": checks}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Manage archived market data snapshots.")
-    parser.add_argument("command", choices=["merge-all"], help="Operation to run")
+    parser.add_argument("command", choices=["merge-all", "health-check"], help="Operation to run")
     args = parser.parse_args()
 
     if args.command == "merge-all":
         built = build_all_merged()
         for path in built:
             print(path)
+    elif args.command == "health-check":
+        import json
+        print(json.dumps(health_check_market_data(), ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

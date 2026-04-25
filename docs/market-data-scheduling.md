@@ -12,6 +12,11 @@ The scheduler should always execute the same repository-local command:
 ```
 
 Run it from the repository root.
+After a refresh, a safe follow-up validation is:
+
+```bash
+.venv/bin/python market_data_store.py health-check
+```
 
 ## Recommended Cadence
 
