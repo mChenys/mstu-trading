@@ -13,6 +13,7 @@
 
 import sys
 import os
+import tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import backtrader as bt
@@ -22,6 +23,12 @@ import pandas as pd
 import numpy as np
 import config
 from fee_model import BUY, SELL, estimate_fees, max_affordable_shares
+from market_data_store import (
+    default_snapshot_date,
+    latest_data_path,
+    market_data_paths,
+    record_snapshot_from_csv,
+)
 
 # ===== 数据获取 =====
 def build_intraday_limit_hint(interval="15m", period="60d") -> str:
@@ -47,12 +54,24 @@ def download_symbol_data(symbol, interval="15m", period="60d"):
         print(f"   {build_intraday_limit_hint(interval=interval, period=period)}")
         return None
     
-    # 保存CSV
-    csv_path = os.path.join(os.path.dirname(__file__), f"{symbol.lower()}_history.csv")
-    df.to_csv(csv_path)
+    # 先写入临时文件，再统一归档到 data/archive + data/latest + data/merged。
+    # 这里不要直接覆盖 archive；archive 只能追加新快照。
+    with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as tmp:
+        temp_csv_path = tmp.name
+    df.to_csv(temp_csv_path)
+    snapshot = record_snapshot_from_csv(
+        symbol=symbol,
+        interval=interval,
+        source_csv=temp_csv_path,
+        snapshot_date=default_snapshot_date(),
+    )
+    os.remove(temp_csv_path)
+    csv_path = snapshot["latest"]
     print(f"✅ {symbol}数据已保存: {csv_path}")
     print(f"   数据范围: {df.index[0].strftime('%Y-%m-%d')} ~ {df.index[-1].strftime('%Y-%m-%d')}")
     print(f"   周期: {interval} | 共 {len(df)} 条K线")
+    print(f"   归档快照: {snapshot['archive']}")
+    print(f"   合并历史: {snapshot['merged']}")
     return csv_path
 
 
@@ -1524,10 +1543,11 @@ if __name__ == "__main__":
     parser.add_argument("--period", default="60d", help="下载历史范围，默认60d")
     args = parser.parse_args()
     
-    csv_path = os.path.join(os.path.dirname(__file__), "mstu_history.csv")
+    csv_path = latest_data_path("MSTU", args.interval)
     dual_csv = {
-        "mstu": os.path.join(os.path.dirname(__file__), "mstu_history.csv"),
-        "mstr": os.path.join(os.path.dirname(__file__), "mstr_history.csv"),
+        "mstu": latest_data_path("MSTU", args.interval),
+        "mstr": latest_data_path("MSTR", args.interval),
+        "btc": latest_data_path(config.BTC_SYMBOL, args.interval),
     }
     
     # 下载数据

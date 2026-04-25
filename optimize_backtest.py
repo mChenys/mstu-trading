@@ -6,7 +6,9 @@ import itertools
 import json
 import os
 
+import config
 from backtest import CombinedStrategy, download_market_data, collect_backtest_metrics
+from market_data_store import latest_data_path
 
 
 SEARCH_SPACE = {
@@ -51,8 +53,9 @@ def main():
     args = parser.parse_args()
 
     csv_path = {
-        "mstu": os.path.join(os.path.dirname(__file__), "mstu_history.csv"),
-        "mstr": os.path.join(os.path.dirname(__file__), "mstr_history.csv"),
+        "mstu": latest_data_path("MSTU", args.interval),
+        "mstr": latest_data_path("MSTR", args.interval),
+        "btc": latest_data_path(config.BTC_SYMBOL, args.interval),
     }
     if args.download or not (os.path.exists(csv_path["mstu"]) and os.path.exists(csv_path["mstr"])):
         result = download_market_data(interval=args.interval, period=args.period)

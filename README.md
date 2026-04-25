@@ -80,6 +80,17 @@ export MSTU_STAMP_DUTY_USD_TO_RM_FX=4.70
 
 这个顺序不要改。`CombinedStrategy` 默认按这个顺序读取数据。
 
+4. 不要删除或覆盖 `data/archive/`
+分钟级历史数据有滚动窗口限制，`data/archive/` 是项目的长期资产。
+后续要做 `120d`、`360d` 这类长窗口回测，依赖这里持续积累的快照。
+如果要刷新数据，请使用仓库脚本：
+
+```bash
+./scripts/refresh_market_data.sh 15m 60d
+```
+
+详细规则见 [data/README.md](data/README.md)。
+
 ## 当前策略结构
 ### 实时策略
 `strategy.py`
