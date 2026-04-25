@@ -57,6 +57,15 @@ Before using or modifying market data, agents should validate the layout:
 This verifies that `latest/`, `archive/`, and `merged/` all exist and that the
 tracked CSVs are readable.
 
+## Inventory
+
+To see a quick summary of tracked symbols, intervals, row counts, and time
+ranges:
+
+```bash
+.venv/bin/python market_data_store.py inventory
+```
+
 ## Periodic Refresh
 
 Recommended minimum schedule:

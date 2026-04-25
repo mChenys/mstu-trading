@@ -84,6 +84,19 @@ merged long-history files.
 If this returns `"status": "ok"`, the tracked `latest / archive / merged`
 layers are present and readable.
 
+### Inspect the current data inventory
+
+```bash
+.venv/bin/python market_data_store.py inventory
+```
+
+Use this for a quick human-readable summary of:
+
+- which symbols are present
+- which intervals exist
+- snapshot counts
+- latest and merged time ranges
+
 ## Rules For Future Agents
 
 - Do not delete `data/archive/` to reduce repository size.

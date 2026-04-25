@@ -225,9 +225,76 @@ def health_check_market_data(
     return {"status": status, "checks": checks}
 
 
+def market_data_inventory(data_root: str | os.PathLike | None = None) -> dict:
+    """Summarize tracked market data for humans and future agents."""
+    root = Path(data_root or DATA_ROOT)
+    archive_root = root / "data" / "archive"
+    latest_root = root / "data" / "latest"
+    merged_root = root / "data" / "merged"
+
+    symbols: dict[str, dict[str, dict]] = {}
+
+    all_symbols = set()
+    if archive_root.exists():
+        all_symbols.update(p.name for p in archive_root.iterdir() if p.is_dir())
+    if latest_root.exists():
+        all_symbols.update(p.name for p in latest_root.iterdir() if p.is_dir())
+    if merged_root.exists():
+        all_symbols.update(p.name for p in merged_root.iterdir() if p.is_dir())
+
+    for symbol in sorted(all_symbols):
+        symbols[symbol] = {}
+        intervals = set()
+        symbol_archive = archive_root / symbol
+        symbol_latest = latest_root / symbol
+        symbol_merged = merged_root / symbol
+
+        if symbol_archive.exists():
+            intervals.update(p.name for p in symbol_archive.iterdir() if p.is_dir())
+        if symbol_latest.exists():
+            intervals.update(p.stem for p in symbol_latest.glob("*.csv"))
+        if symbol_merged.exists():
+            intervals.update(p.stem for p in symbol_merged.glob("*.csv"))
+
+        for interval in sorted(intervals):
+            archive_dir = symbol_archive / interval
+            latest_path = symbol_latest / f"{interval}.csv"
+            merged_path = symbol_merged / f"{interval}.csv"
+            archive_files = sorted(archive_dir.glob("*.csv")) if archive_dir.exists() else []
+
+            summary = {
+                "archive_snapshots": len(archive_files),
+                "latest_rows": 0,
+                "merged_rows": 0,
+                "latest_start": None,
+                "latest_end": None,
+                "merged_start": None,
+                "merged_end": None,
+            }
+
+            if latest_path.exists():
+                info = _csv_time_range(str(latest_path))
+                summary["latest_rows"] = info["rows"]
+                summary["latest_start"] = info["start"]
+                summary["latest_end"] = info["end"]
+
+            if merged_path.exists():
+                info = _csv_time_range(str(merged_path))
+                summary["merged_rows"] = info["rows"]
+                summary["merged_start"] = info["start"]
+                summary["merged_end"] = info["end"]
+
+            symbols[symbol][interval] = summary
+
+    return {
+        "status": "ok" if symbols else "empty",
+        "symbols": symbols,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Manage archived market data snapshots.")
-    parser.add_argument("command", choices=["merge-all", "health-check"], help="Operation to run")
+    parser.add_argument("command", choices=["merge-all", "health-check", "inventory"], help="Operation to run")
     args = parser.parse_args()
 
     if args.command == "merge-all":
@@ -237,6 +304,9 @@ def main() -> None:
     elif args.command == "health-check":
         import json
         print(json.dumps(health_check_market_data(), ensure_ascii=False, indent=2))
+    elif args.command == "inventory":
+        import json
+        print(json.dumps(market_data_inventory(), ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
