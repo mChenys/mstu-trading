@@ -57,10 +57,12 @@ Safer schedule:
 
 - once per week
 
-Example cron entry:
+Portable cron example:
 
 ```cron
-0 9 * * 1 cd /Users/chenyousheng/work/workspace/tranding/mstu-trading && ./scripts/refresh_market_data.sh 15m 60d >> logs/data-refresh.log 2>&1
+0 9 * * 1 cd /path/to/mstu-trading && ./scripts/refresh_market_data.sh 15m 60d >> logs/data-refresh.log 2>&1
 ```
 
 Run the command from the repository root so all paths resolve correctly.
+If the environment is not this repository root, use an equivalent external scheduler
+that can execute the same command from the checked-out repo.
