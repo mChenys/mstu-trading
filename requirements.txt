@@ -1,0 +1,6 @@
+requests>=2.31,<3
+pandas>=2.2,<3
+yfinance>=0.2.40,<1
+backtrader>=1.9.78.123,<2
+ta>=0.11,<1
+Flask>=3.0,<4

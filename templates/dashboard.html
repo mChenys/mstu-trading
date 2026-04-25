@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MSTU Monitoring Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+  </head>
+  <body>
+    <div class="shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">MSTU Trading Monitor</p>
+          <h1>Live Signal</h1>
+          <p class="hero-copy">MSTR -&gt; Signal, MSTU -&gt; Execution</p>
+        </div>
+        <button id="refreshButton" class="refresh-button" type="button">Refresh</button>
+      </header>
+
+      <main class="grid">
+        <section class="panel panel-primary panel-span-2">
+          <div class="panel-label">Signal Chain</div>
+          <div class="chain-grid">
+            <article class="feed-card feed-card-signal">
+              <div class="feed-kicker">MSTR Signal Feed</div>
+              <div id="mstrPrice" class="feed-price">$--.--</div>
+              <div id="mstrMeta" class="feed-meta">Loading signal source...</div>
+              <div id="mstrTrend" class="status-pill">Trend: --</div>
+            </article>
+
+            <div class="chain-link">
+              <div class="chain-line"></div>
+              <div class="chain-copy">MSTR -&gt; Signal -&gt; MSTU</div>
+              <div class="chain-line"></div>
+            </div>
+
+            <article class="feed-card feed-card-execution">
+              <div class="feed-kicker">MSTU Execution Feed</div>
+              <div id="mstuPrice" class="feed-price">$--.--</div>
+              <div id="mstuMeta" class="feed-meta">Loading execution quote...</div>
+              <div id="mstuSession" class="status-pill">Session: --</div>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-label">Strategy Action</div>
+          <div class="trading-date-block">
+            <div class="status-caption">Trading Date</div>
+            <div id="tradingDate" class="trading-date-value">--</div>
+          </div>
+          <div class="status-grid">
+            <div class="status-block">
+              <div class="status-caption">Market Phase</div>
+              <div id="marketPhase" class="signal-action signal-subaction">--</div>
+            </div>
+            <div class="status-block">
+              <div class="status-caption">Decision Status</div>
+              <div id="signalAction" class="signal-action">--</div>
+            </div>
+          </div>
+          <div id="signalReason" class="signal-reason">Waiting for snapshot...</div>
+          <div id="signalList" class="signal-list"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-label">Position State</div>
+          <div id="positionSummary" class="metric-stack"></div>
+        </section>
+
+        <section class="panel panel-span-2 key-levels-panel">
+          <div class="panel-label">关键价位</div>
+          <div id="keyLevelsSummary" class="metric-stack"></div>
+        </section>
+
+        <section class="insight-grid panel-span-2">
+          <div class="panel">
+            <div class="panel-label">Backtest Overview</div>
+            <div id="backtestSummary" class="metric-stack"></div>
+            <div class="panel-subsection">
+              <div class="status-caption">T Model Breakdown</div>
+              <div id="backtestModel" class="model-grid"></div>
+            </div>
+          </div>
+
+          <section class="panel">
+            <div class="panel-label">Webhook Push</div>
+            <div class="webhook-grid">
+              <label class="webhook-field">
+                <span class="status-caption">Feishu Webhook URL</span>
+                <input id="webhookUrl" class="webhook-input" type="url" placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..." />
+              </label>
+              <label class="webhook-field">
+                <span class="status-caption">Push Mode</span>
+                <select id="webhookMode" class="webhook-input">
+                  <option value="trade_only">Only BUY/SELL</option>
+                  <option value="all">All statuses</option>
+                </select>
+              </label>
+              <button id="saveWebhookButton" class="refresh-button" type="button">Save Webhook</button>
+            </div>
+            <div class="webhook-secondary-row">
+              <label class="webhook-toggle">
+                <input id="webhookEnabled" type="checkbox" />
+                <span>Enable Push</span>
+              </label>
+              <button id="testWebhookButton" class="refresh-button" type="button">Send Test Message</button>
+            </div>
+            <div id="webhookStatus" class="signal-list">Webhook not configured.</div>
+            <div class="panel-subsection webhook-meta">
+              <div class="status-caption">Last Push Time</div>
+              <div id="webhookLastPushAt" class="signal-list">--</div>
+              <div class="status-caption">Last Pushed Signal</div>
+              <div id="webhookLastSignal" class="signal-list">--</div>
+            </div>
+          </section>
+        </section>
+
+        <section class="panel panel-span-2">
+          <div class="panel-label">Agent Ops</div>
+          <div class="ops-toolbar">
+            <div id="opsSummary" class="signal-list">Loading ops snapshot...</div>
+            <button id="opsRecoverButton" class="refresh-button" type="button">Run Recovery Scan</button>
+          </div>
+          <div class="ops-grid">
+            <div class="ops-column">
+              <div class="status-caption">Action Required Trades</div>
+              <div id="pendingTrades" class="ops-list"></div>
+            </div>
+            <div class="ops-column">
+              <div class="status-caption">Trade Detail</div>
+              <div id="tradeDetail" class="ops-detail">Select a pending trade to inspect its full context.</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel panel-span-2">
+          <div class="panel-label">Refresh Flow</div>
+          <div id="refreshFlow" class="trace-grid"></div>
+          <div class="panel-subsection">
+            <div class="status-caption">Activity Log</div>
+            <div id="activityLog" class="activity-log"></div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <span id="systemLine">Signal: MSTR | Execution: MSTU</span>
+        <span id="lastUpdated">Last updated: --</span>
+      </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+  </body>
+</html>

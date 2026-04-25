@@ -1,0 +1,16 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.venv/
+venv/
+web_app.log
+webhook_daemon.log
+*.log
+position_state.json
+trade_records.json
+*.sqlite
+mstr_history.csv
+mstu_history.csv
+optimization_results.json
