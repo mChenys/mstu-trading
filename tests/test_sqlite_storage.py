@@ -6,6 +6,7 @@ from unittest import mock
 
 import app_runtime
 import feishu_gateway
+import sqlite_storage
 import trade_confirmation
 import trade_service
 
@@ -205,6 +206,41 @@ class SqliteStorageTest(unittest.TestCase):
         self.assertEqual(detail1, "webhook")
         self.assertEqual(detail2, "idempotent")
         self.assertEqual(mock_send.call_count, 1)
+
+    def test_fetch_helpers_close_cursor_objects(self):
+        class FakeCursor:
+            def __init__(self, rows):
+                self.rows = rows
+                self.closed = False
+
+            def fetchone(self):
+                return self.rows[0]
+
+            def fetchall(self):
+                return self.rows
+
+            def close(self):
+                self.closed = True
+
+        class FakeConnection:
+            def __init__(self):
+                self.cursors = []
+
+            def execute(self, _query, _params=()):
+                cursor = FakeCursor([{"value": 1}, {"value": 2}])
+                self.cursors.append(cursor)
+                return cursor
+
+        conn = FakeConnection()
+
+        first = sqlite_storage._fetchone(conn, "SELECT 1")
+        rows = sqlite_storage._fetchall(conn, "SELECT 1 UNION ALL SELECT 2")
+        sqlite_storage._execute(conn, "DELETE FROM kv_store WHERE key = ?", ("demo",))
+
+        self.assertEqual(first, {"value": 1})
+        self.assertEqual(rows, [{"value": 1}, {"value": 2}])
+        self.assertEqual(len(conn.cursors), 3)
+        self.assertTrue(all(cursor.closed for cursor in conn.cursors))
 
 
 if __name__ == "__main__":

@@ -1,9 +1,14 @@
 import unittest
 
+import backtest
+from mstu_trading.backtest import engine as package_engine
 from backtest import evaluate_daily_tone_snapshot
 
 
 class DailyToneSnapshotTest(unittest.TestCase):
+    def test_root_wrapper_and_package_module_share_identity(self):
+        self.assertIs(backtest, package_engine)
+
     def test_bullish_strong_tone_relaxes_forward_side(self):
         result = evaluate_daily_tone_snapshot(
             mstr_change_pct=2.1,

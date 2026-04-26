@@ -6,10 +6,15 @@ from unittest.mock import patch
 
 import app_runtime
 import config
+import strategy
+from mstu_trading.strategy import realtime as package_realtime
 from strategy import TradingStrategy
 
 
 class StrategyGuardsTest(unittest.TestCase):
+    def test_root_wrapper_and_package_module_share_identity(self):
+        self.assertIs(strategy, package_realtime)
+
     def setUp(self):
         os.makedirs(os.path.dirname(config.POSITION_STATE_FILE), exist_ok=True)
 

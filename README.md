@@ -163,26 +163,49 @@ export MSTU_STAMP_DUTY_USD_TO_RM_FX=4.70
 ## 关键文件说明
 ```text
 mstu-trading/
-├── config.py                 # 实时策略阈值与运行配置
-├── fetcher.py                # 获取 MSTU / MSTR 行情
-├── indicators.py             # 基础技术指标
-├── indicators_enhanced.py    # 增强指标（若存在）
-├── strategy.py               # 实时交易策略，MSTR 发信号 / MSTU 执行
-├── trade_confirmation.py     # pending trade 记录、确认、拒绝、历史保留
-├── trade_message_handler.py  # 处理“确认/拒绝”等消息，优先走 trade_id
-├── scheduler.py              # 定时扫描与消息生成
-├── backtest.py               # Backtrader 回测，支持双标 feed
-├── optimize_backtest.py      # 参数搜索
-├── dashboard_service.py      # Dashboard 聚合层：行情/信号/持仓/回测摘要
-├── web_app.py                # 本地监控台 Flask 入口
-├── webhook_worker.py         # 独立 Webhook 推送 worker，不由页面刷新触发
-├── webhook_daemon.py         # 本地守护脚本，默认每60秒执行一次 webhook worker
+├── mstu_trading/             # 主包：真实实现都在这里
+│   ├── app_runtime.py        # 状态目录 / 路径管理
+│   ├── config.py             # 运行配置
+│   ├── strategy/             # 实时策略与指标
+│   ├── backtest/             # 回测与参数搜索
+│   ├── market_data/          # 行情获取与数据归档
+│   ├── trading/              # proposal / 确认 / 消息处理
+│   ├── integrations/         # 飞书、scheduler、webhook daemon/worker
+│   ├── web/                  # Flask app 与 dashboard 聚合层
+│   └── storage/              # sqlite 持久化
+├── config.py                 # 兼容入口，转发到 mstu_trading.config
+├── fetcher.py                # 兼容入口，转发到 mstu_trading.market_data.fetcher
+├── strategy.py               # 兼容入口，转发到 mstu_trading.strategy.realtime
+├── trade_confirmation.py     # 兼容入口，转发到 mstu_trading.trading.confirmation
+├── trade_message_handler.py  # 兼容入口，转发到 mstu_trading.trading.message_handler
+├── scheduler.py              # 兼容入口，转发到 mstu_trading.integrations.scheduler
+├── backtest.py               # 兼容入口，转发到 mstu_trading.backtest.engine
+├── optimize_backtest.py      # 兼容入口，转发到 mstu_trading.backtest.optimize
+├── dashboard_service.py      # 兼容入口，转发到 mstu_trading.web.dashboard_service
+├── web_app.py                # 兼容入口，转发到 mstu_trading.web.app
+├── webhook_worker.py         # 兼容入口，转发到 mstu_trading.integrations.webhook_worker
+├── webhook_daemon.py         # 兼容入口，转发到 mstu_trading.integrations.webhook_daemon
 ├── templates/dashboard.html  # Dashboard 页面模板
 ├── static/dashboard.css      # Dashboard 样式
 ├── static/dashboard.js       # Dashboard 前端轮询与渲染
+├── tests/                    # 当前统一测试目录
 ├── requirements.txt          # 项目依赖
-└── test_*.py                 # 当前已补的关键回归测试
+└── test_*.py                 # 已迁移进 tests/，根目录不再保留
 ```
+
+## 包结构说明
+当前仓库已经完成包化，真实实现统一收口在 `mstu_trading/` 下。
+
+- `mstu_trading/...`：真实业务代码
+- 根目录 `*.py`：兼容入口，保留旧命令和旧 import 路径
+- `tests/`：统一测试目录，后续默认从这里跑测试发现
+
+这意味着：
+
+- 如果你在读代码，优先读 `mstu_trading/`
+- 如果你在跑旧命令，例如 `python backtest.py`、`python web_app.py`，仍然可以继续使用
+- `scheduler.py`、`webhook_worker.py`、`webhook_daemon.py` 这些旧入口也都还保留
+- 如果你在新增模块，不要再把真实实现平铺回根目录
 
 ## 环境准备
 建议使用项目内虚拟环境：
@@ -224,8 +247,18 @@ export $(grep -v '^#' .env | xargs)
 
 ### 4. 跑测试
 ```bash
-.venv/bin/python -m unittest test_strategy_guards.py test_trade_message_handler.py
-.venv/bin/python -m unittest discover -v
+export MSTU_TRADING_STATE_DIR=/tmp/mstu-trading-state
+.venv/bin/python -m unittest discover -s tests -v
+```
+
+说明：
+
+- 现在测试默认从 `tests/` 目录发现，不再以根目录 `test_*.py` 为主
+- 建议显式设置 `MSTU_TRADING_STATE_DIR`，避免测试写入默认的 `~/.openclaw/workspace/mstu-trading`
+- 如果你只是临时本地跑一次，也可以直接一行：
+
+```bash
+MSTU_TRADING_STATE_DIR=/tmp/mstu-trading-state .venv/bin/python -m unittest discover -s tests -v
 ```
 
 ### 5. 启动本地监控台
@@ -254,7 +287,19 @@ export $(grep -v '^#' .env | xargs)
 - `webhook_worker.py` 才是独立执行推送判断与发送的入口
 - 如果要做定时推送，建议由外部 cron / scheduler 定时调用 `webhook_worker.py`
 
-### 7. 本地后台自动运行 Webhook Worker
+### 7. 运行兼容 scheduler 入口
+```bash
+.venv/bin/python scheduler.py --help
+.venv/bin/python scheduler.py --mode morning
+```
+
+说明：
+
+- `scheduler.py` 仍然是兼容入口，真实实现已经迁到 `mstu_trading.integrations.scheduler`
+- `--mode` 支持 `scan`、`morning`、`overnight`、`evening`、`webhook`
+- 如果你只是验证入口是否正常，优先跑 `--help`
+
+### 8. 本地后台自动运行 Webhook Worker
 ```bash
 .venv/bin/python webhook_daemon.py
 ```
@@ -270,9 +315,11 @@ export $(grep -v '^#' .env | xargs)
 ```bash
 .venv/bin/python webhook_daemon.py --once
 .venv/bin/python webhook_daemon.py --interval 120
+.venv/bin/python backtest.py --help
+.venv/bin/python optimize_backtest.py --help
 ```
 
-### 8. 一键启动 / 停止本地服务
+### 9. 一键启动 / 停止本地服务
 ```bash
 ./start_all.sh
 ./stop_all.sh

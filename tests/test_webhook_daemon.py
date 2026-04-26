@@ -3,9 +3,13 @@ from unittest.mock import patch
 
 import webhook_daemon
 import dashboard_service
+from mstu_trading.integrations import webhook_daemon as package_webhook_daemon
 
 
 class WebhookDaemonTest(unittest.TestCase):
+    def test_root_wrapper_and_package_module_share_identity(self):
+        self.assertIs(webhook_daemon, package_webhook_daemon)
+
     def setUp(self):
         self.original_heartbeat_file = webhook_daemon.HEARTBEAT_FILE
         self.test_heartbeat_file = "/tmp/mstu_webhook_daemon_heartbeat_test.json"

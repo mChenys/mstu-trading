@@ -16,3 +16,4 @@ mstu_history.csv
 optimization_results.json
 btc-usd_history.csv
 reports/
+.worktrees/

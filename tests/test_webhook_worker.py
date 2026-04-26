@@ -6,9 +6,13 @@ from unittest.mock import patch
 import config
 import dashboard_service
 import webhook_worker
+from mstu_trading.integrations import webhook_worker as package_webhook_worker
 
 
 class WebhookWorkerTest(unittest.TestCase):
+    def test_root_wrapper_and_package_module_share_identity(self):
+        self.assertIs(webhook_worker, package_webhook_worker)
+
     def setUp(self):
         self.webhook_state_file = os.path.join(
             os.path.dirname(config.POSITION_STATE_FILE), "webhook_config_test_worker.json"

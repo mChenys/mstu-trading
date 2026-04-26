@@ -12,12 +12,18 @@ import sqlite_storage
 import trade_confirmation
 import trade_service
 import web_app
+from mstu_trading.web import app as package_web_app
+from mstu_trading.web import dashboard_service as package_dashboard_service
 
 from dashboard_service import build_dashboard_snapshot
 from web_app import create_app
 
 
 class DashboardServiceTest(unittest.TestCase):
+    def test_root_wrappers_and_package_modules_share_identity(self):
+        self.assertIs(dashboard_service, package_dashboard_service)
+        self.assertIs(web_app, package_web_app)
+
     def setUp(self):
         self.temp_state_dir = tempfile.mkdtemp(prefix="mstu-dashboard-test-")
         self.original_position_state_file = config.POSITION_STATE_FILE

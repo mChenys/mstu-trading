@@ -5,9 +5,14 @@ import unittest
 from unittest.mock import patch
 
 import backtest
+import optimize_backtest
+from mstu_trading.backtest import optimize as package_optimize
 
 
 class BacktestExperimentTest(unittest.TestCase):
+    def test_optimize_root_wrapper_and_package_module_share_identity(self):
+        self.assertIs(optimize_backtest, package_optimize)
+
     def test_quadrant_experiment_returns_all_variants(self):
         fake_metrics = {
             "final_value": 1500.0,

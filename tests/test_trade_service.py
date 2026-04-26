@@ -10,9 +10,15 @@ import app_runtime
 import sqlite_storage
 import trade_confirmation
 import trade_service
+from mstu_trading.trading import confirmation as package_confirmation
+from mstu_trading.trading import service as package_service
 
 
 class TradeServiceTest(unittest.TestCase):
+    def test_root_wrappers_and_package_modules_share_identity(self):
+        self.assertIs(trade_confirmation, package_confirmation)
+        self.assertIs(trade_service, package_service)
+
     def setUp(self):
         self.temp_state_dir = tempfile.mkdtemp(prefix="mstu-trade-service-test-")
         self.original_sqlite_state_file = sqlite_storage.SQLITE_STATE_FILE
