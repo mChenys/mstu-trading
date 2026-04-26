@@ -43,6 +43,7 @@ class TradingStrategy:
         self.tone_forward_bias = 0.0  # 正T阈值放宽
         self.tone_reverse_bias = 0.0  # 反T阈值放宽
         self.tone_reason = ""
+        self.tone_reason_parts = []
         self.tone_updated_at = ""
         self.load_position()
 
@@ -120,6 +121,7 @@ class TradingStrategy:
                     self.tone_forward_bias = data.get('tone_forward_bias', 0.0)
                     self.tone_reverse_bias = data.get('tone_reverse_bias', 0.0)
                     self.tone_reason = data.get('tone_reason', '')
+                    self.tone_reason_parts = data.get('tone_reason_parts', [])
                     self.tone_updated_at = data.get('tone_updated_at', '')
             except:
                 pass
@@ -145,6 +147,7 @@ class TradingStrategy:
             'tone_forward_bias': self.tone_forward_bias,
             'tone_reverse_bias': self.tone_reverse_bias,
             'tone_reason': self.tone_reason,
+            'tone_reason_parts': self.tone_reason_parts,
             'tone_updated_at': self.tone_updated_at,
             'updated_at': datetime.now(timezone.utc).isoformat()
         }
@@ -230,6 +233,7 @@ class TradingStrategy:
             self.tone_forward_bias = tone_data.get("forward_bias", 0.0)
             self.tone_reverse_bias = tone_data.get("reverse_bias", 0.0)
             self.tone_reason = tone_data.get("reason", "")
+            self.tone_reason_parts = tone_data.get("reason_parts", [])
             self.tone_updated_at = datetime.now(timezone.utc).isoformat()
         
         # 盘前：低吸买入
@@ -260,11 +264,12 @@ class TradingStrategy:
             result = self._overnight_analysis(quote)
             result["daily_tone"] = self.daily_tone
             result["tone_reason"] = self.tone_reason
+            result["tone_reason_parts"] = self.tone_reason_parts
             return result
         
         # 默认返回时也带上基调
         return {"action": "HOLD", "reason": "未知时段", "price": price,
-                "daily_tone": self.daily_tone, "tone_reason": self.tone_reason}
+                "daily_tone": self.daily_tone, "tone_reason": self.tone_reason, "tone_reason_parts": self.tone_reason_parts}
     
     def _check_sell_target(self, quote: dict) -> dict:
         """检查是否到达卖出目标"""
@@ -408,6 +413,7 @@ class TradingStrategy:
                     "gap_pct": round(gap_pct * 100, 2),
                     "daily_tone": self.daily_tone,
                     "tone_reason": self.tone_reason,
+                    "tone_reason_parts": self.tone_reason_parts,
                     "effective_dip_threshold_pct": round(effective_dip_threshold * 100, 2),
                     "signals": signals,
                     "reason": f"🟢 {strength}: {ref_symbol}盘前低开{gap_pct*100:+.1f}%，在MSTU买入{buy_shares}股，目标${target:.2f}"
@@ -444,6 +450,7 @@ class TradingStrategy:
                             "gap_pct": round(gap_pct * 100, 2),
                             "daily_tone": self.daily_tone,
                             "tone_reason": self.tone_reason,
+                            "tone_reason_parts": self.tone_reason_parts,
                             "effective_momentum_threshold_pct": round(effective_momentum_threshold * 100, 2),
                             "signals": signals,
                             "reason": f"📈 追涨: {ref_symbol}盘前高开{gap_pct*100:+.1f}%，顺势在MSTU买入{buy_shares}股，快止盈${target:.2f}"
@@ -461,6 +468,7 @@ class TradingStrategy:
             "gap_pct": round(gap_pct * 100, 2),
             "daily_tone": self.daily_tone,
             "tone_reason": self.tone_reason,
+            "tone_reason_parts": self.tone_reason_parts,
             "effective_dip_threshold_pct": round(effective_dip_threshold * 100, 2),
             "effective_momentum_threshold_pct": round(effective_momentum_threshold * 100, 2),
             "signals": signals,
@@ -540,6 +548,7 @@ class TradingStrategy:
                     "change_pct": round(change_pct * 100, 2),
                     "daily_tone": self.daily_tone,
                     "tone_reason": self.tone_reason,
+                    "tone_reason_parts": self.tone_reason_parts,
                     "effective_dip_threshold_pct": round(effective_dip_threshold * 100, 2),
                     "signals": signals,
                     "reason": f"🟢 低吸: {ref_symbol}夜盘跌{change_pct*100:+.1f}%，在MSTU买入{buy_shares}股，目标${target:.2f}"
@@ -577,6 +586,7 @@ class TradingStrategy:
                             "change_pct": round(change_pct * 100, 2),
                             "daily_tone": self.daily_tone,
                             "tone_reason": self.tone_reason,
+                            "tone_reason_parts": self.tone_reason_parts,
                             "effective_momentum_threshold_pct": round(effective_momentum_threshold * 100, 2),
                             "signals": signals,
                             "reason": f"📈 追涨: {ref_symbol}夜盘涨{change_pct*100:+.1f}%，顺势在MSTU买入{buy_shares}股，快止盈${target:.2f}"
@@ -598,6 +608,7 @@ class TradingStrategy:
             "change_pct": round(change_pct * 100, 2),
             "daily_tone": self.daily_tone,
             "tone_reason": self.tone_reason,
+            "tone_reason_parts": self.tone_reason_parts,
             "effective_dip_threshold_pct": round(effective_dip_threshold * 100, 2),
             "effective_momentum_threshold_pct": round(effective_momentum_threshold * 100, 2),
             "signals": signals,
@@ -1019,6 +1030,7 @@ class TradingStrategy:
             "mstr_trend_ok": mstr_trend_ok,
             "daily_tone": self.daily_tone,
             "tone_reason": self.tone_reason,
+            "tone_reason_parts": self.tone_reason_parts,
             "tone_forward_bias": self.tone_forward_bias,
             "tone_reverse_bias": self.tone_reverse_bias,
             "buy_trigger_threshold": round(buy_trigger_threshold, 2),

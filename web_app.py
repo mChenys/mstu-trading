@@ -1,3 +1,5 @@
+import os
+
 from flask import Flask, jsonify, render_template
 from flask import request
 
@@ -100,4 +102,5 @@ app = create_app()
 
 
 if __name__ == "__main__":
-    app.run(debug=False)
+    port = int(os.environ.get("WEB_APP_PORT", "5000"))
+    app.run(host="127.0.0.1", port=port, debug=False)

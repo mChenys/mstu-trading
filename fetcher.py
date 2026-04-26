@@ -153,6 +153,7 @@ def calculate_daily_tone(mstr_trend: dict = None, btc_trend: dict = None, ttl_se
     forward_bias = 0.0
     reverse_bias = 0.0
     reason_parts = []
+    reason_part_structs = []
     
     # BTC 大盘趋势
     btc_trend_val = btc_trend.get("trend", "neutral") if "error" not in btc_trend else "neutral"
@@ -174,17 +175,21 @@ def calculate_daily_tone(mstr_trend: dict = None, btc_trend: dict = None, ttl_se
     if btc_trend_val == "bullish" and btc_change > 1.0:
         tone = "bullish"
         reason_parts.append(f"BTC涨{btc_change:+.1f}%多头结构")
+        reason_part_structs.append({"code": "BTC_BULLISH", "params": {"change_pct": round(btc_change, 1)}})
         if btc_change > 2.0:
             tone = "bullish_strong"
             reason_parts.append("(强)")
+            reason_part_structs[-1]["params"]["strength"] = "strong"
     
     # BTC 强下跌：EMA 空头 + 价格在快线下方 + 跌幅 > 1%
     elif btc_trend_val == "bearish" and btc_change < -1.0:
         tone = "bearish"
         reason_parts.append(f"BTC跌{btc_change:+.1f}%空头结构")
+        reason_part_structs.append({"code": "BTC_BEARISH", "params": {"change_pct": round(btc_change, 1)}})
         if btc_change < -2.0:
             tone = "bearish_strong"
             reason_parts.append("(强)")
+            reason_part_structs[-1]["params"]["strength"] = "strong"
     
     # MSTR 基调补充判断
     # 高开 + 多头结构 → 增强 bullish
@@ -194,6 +199,7 @@ def calculate_daily_tone(mstr_trend: dict = None, btc_trend: dict = None, ttl_se
         elif tone == "bullish":
             tone = "bullish_strong"
         reason_parts.append(f"MSTR高开{mstr_gap_pct:+.1f}%")
+        reason_part_structs.append({"code": "MSTR_GAP_UP", "params": {"change_pct": round(mstr_gap_pct, 1)}})
     
     # 低开 + 空头结构 → 增强 bearish
     elif tone in ["neutral", "bearish"] and mstr_gap_pct < -1.5 and not mstr_bull_structure_weak:
@@ -202,17 +208,20 @@ def calculate_daily_tone(mstr_trend: dict = None, btc_trend: dict = None, ttl_se
         elif tone == "bearish":
             tone = "bearish_strong"
         reason_parts.append(f"MSTR低开{mstr_gap_pct:+.1f}%")
+        reason_part_structs.append({"code": "MSTR_GAP_DOWN", "params": {"change_pct": round(mstr_gap_pct, 1)}})
     
     # 盘前/夜盘均线关系判断
     # EMA 多头共振 → bullish
     if tone == "neutral" and mstr_ema_bullish and mstr_macd_bullish and btc_ema_bullish:
         tone = "bullish"
         reason_parts.append("MSTR+BTC均线共振多头")
+        reason_part_structs.append({"code": "MSTR_BTC_RESONANCE_BULLISH", "params": {}})
     
     # EMA 空头共振 → bearish
     elif tone == "neutral" and not mstr_ema_bullish and not mstr_macd_bullish and not btc_ema_bullish:
         tone = "bearish"
         reason_parts.append("MSTR+BTC均线共振空头")
+        reason_part_structs.append({"code": "MSTR_BTC_RESONANCE_BEARISH", "params": {}})
     
     # ===== 计算阈值调整 =====
     if tone in ["bullish", "bullish_strong"]:
@@ -232,12 +241,15 @@ def calculate_daily_tone(mstr_trend: dict = None, btc_trend: dict = None, ttl_se
     # neutral 维持默认，不调整
     
     reason = " | " .join(reason_parts) if reason_parts else "无明显方向信号"
+    if not reason_part_structs:
+        reason_part_structs.append({"code": "NO_CLEAR_DIRECTION", "params": {}})
     
     result = {
         "tone": tone,
         "forward_bias": forward_bias,
         "reverse_bias": reverse_bias,
         "reason": reason,
+        "reason_parts": reason_part_structs,
         "mstr_trend": mstr_trend if "error" not in mstr_trend else {},
         "btc_trend": btc_trend if "error" not in btc_trend else {},
     }

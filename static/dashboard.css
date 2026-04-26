@@ -7,6 +7,8 @@
   --accent: #c6ff7f;
   --accent-strong: #8cff66;
   --danger: #ff8570;
+  --warning: #ffd36f;
+  --info: #8fd6ff;
   --shadow: 0 22px 60px rgba(0, 0, 0, 0.35);
 }
 
@@ -42,7 +44,30 @@ body {
   justify-content: space-between;
   gap: 24px;
   align-items: end;
-  margin-bottom: 28px;
+  margin-bottom: 20px;
+}
+
+.hero-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.language-switcher {
+  display: inline-flex;
+  align-items: center;
+}
+
+.language-select {
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  padding: 10px 14px;
+  font: inherit;
+  min-width: 108px;
 }
 
 .eyebrow {
@@ -66,7 +91,8 @@ h1 {
   font-size: 15px;
 }
 
-.refresh-button {
+.refresh-button,
+.ops-button {
   border: 1px solid rgba(198, 255, 127, 0.3);
   background: rgba(198, 255, 127, 0.08);
   color: var(--text);
@@ -76,17 +102,21 @@ h1 {
   transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
 }
 
-.refresh-button:hover {
+.refresh-button:hover,
+.ops-button:hover {
   border-color: rgba(198, 255, 127, 0.55);
   background: rgba(198, 255, 127, 0.14);
 }
 
-.refresh-button:focus {
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(198, 255, 127, 0.18);
+.refresh-button:focus-visible,
+.ops-button:focus-visible,
+.webhook-input:focus-visible {
+  outline: 2px solid rgba(198, 255, 127, 0.78);
+  outline-offset: 2px;
 }
 
-.refresh-button:active {
+.refresh-button:active,
+.ops-button:active {
   transform: translateY(1px);
 }
 
@@ -94,6 +124,152 @@ h1 {
   opacity: 0.52;
   cursor: not-allowed;
   box-shadow: none;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 116px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.status-badge-neutral {
+  color: var(--muted);
+}
+
+.status-badge-loading {
+  color: var(--warning);
+  border-color: rgba(255, 211, 111, 0.26);
+}
+
+.status-badge-success {
+  color: var(--accent-strong);
+  border-color: rgba(140, 255, 102, 0.24);
+}
+
+.status-badge-warning {
+  color: var(--warning);
+  border-color: rgba(255, 211, 111, 0.26);
+}
+
+.status-badge-error {
+  color: var(--danger);
+  border-color: rgba(255, 133, 112, 0.28);
+}
+
+.banner {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+}
+
+.banner-hidden {
+  display: none;
+}
+
+.banner-warning {
+  border-color: rgba(255, 211, 111, 0.24);
+  background: rgba(255, 211, 111, 0.08);
+}
+
+.banner-error {
+  border-color: rgba(255, 133, 112, 0.28);
+  background: rgba(255, 133, 112, 0.08);
+}
+
+.banner-warning,
+.banner-error {
+  box-shadow: var(--shadow);
+}
+
+.summary-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.summary-card {
+  padding: 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow: var(--shadow);
+}
+
+.summary-card-primary {
+  background:
+    linear-gradient(135deg, rgba(198, 255, 127, 0.12), rgba(255, 255, 255, 0.02)),
+    rgba(23, 31, 27, 0.95);
+}
+
+.summary-label {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.summary-value {
+  display: block;
+  margin-bottom: 8px;
+  font-size: clamp(24px, 3vw, 34px);
+  line-height: 0.98;
+  letter-spacing: -0.03em;
+  font-family: "Avenir Next Condensed", "Arial Narrow", sans-serif;
+}
+
+.summary-value-buy {
+  color: var(--accent-strong);
+}
+
+.summary-value-sell,
+.summary-value-error {
+  color: var(--danger);
+}
+
+.summary-value-watch,
+.summary-value-blocked,
+.summary-value-setup,
+.summary-value-premarket {
+  color: var(--warning);
+}
+
+.summary-value-hold,
+.summary-value-offline,
+.summary-value-neutral {
+  color: #c0cbc4;
+}
+
+.summary-detail {
+  display: block;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .grid {
@@ -206,12 +382,6 @@ h1 {
   color: var(--muted);
 }
 
-.price {
-  font-size: clamp(42px, 7vw, 72px);
-  line-height: 0.95;
-  font-family: "Avenir Next Condensed", "Arial Narrow", sans-serif;
-}
-
 .muted,
 .signal-reason,
 .signal-list,
@@ -243,14 +413,16 @@ h1 {
   color: var(--accent-strong);
 }
 
-.signal-action.sell {
+.signal-action.sell,
+.signal-action.error {
   color: var(--danger);
 }
 
 .signal-action.blocked,
 .signal-action.watch,
-.signal-action.setup {
-  color: #ffd36f;
+.signal-action.setup,
+.signal-action.premarket {
+  color: var(--warning);
 }
 
 .signal-action.hold,
@@ -265,25 +437,22 @@ h1 {
   margin-bottom: 8px;
 }
 
-.trading-date-block {
-  margin-bottom: 16px;
+.trading-date-block,
+.status-block {
   padding: 14px 16px;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+.trading-date-block {
+  margin-bottom: 16px;
+}
+
 .trading-date-value {
   font-size: 22px;
   color: var(--text);
   font-weight: 600;
-}
-
-.status-block {
-  padding: 14px 16px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.02);
 }
 
 .status-caption {
@@ -297,6 +466,115 @@ h1 {
 .metric-stack {
   display: grid;
   gap: 10px;
+}
+
+.technical-panel {
+  background:
+    radial-gradient(circle at top left, rgba(143, 214, 255, 0.08), transparent 26%),
+    linear-gradient(180deg, rgba(18, 24, 23, 0.96), rgba(13, 18, 17, 0.96));
+}
+
+.technical-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.72fr) minmax(0, 1.6fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.tone-rail {
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background:
+    radial-gradient(circle at top right, rgba(198, 255, 127, 0.1), transparent 42%),
+    rgba(255, 255, 255, 0.02);
+}
+
+.tone-kicker {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.tone-direction {
+  font-size: clamp(28px, 3vw, 40px);
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+  font-family: "Avenir Next Condensed", "Arial Narrow", sans-serif;
+}
+
+.tone-direction-bullish,
+.tone-direction-bullish_strong {
+  color: var(--accent-strong);
+}
+
+.tone-direction-bearish,
+.tone-direction-bearish_strong {
+  color: var(--danger);
+}
+
+.tone-direction-neutral {
+  color: #d8dfdb;
+}
+
+.tone-summary,
+.tone-bias,
+.tone-meta {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.tone-bias {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.technical-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.technical-group {
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.technical-group-title {
+  margin-bottom: 12px;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.technical-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.technical-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.technical-empty {
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 .key-levels-panel {
@@ -532,6 +810,12 @@ h1 {
   margin-bottom: 6px;
 }
 
+.trace-card span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text);
+}
+
 .trace-card small {
   display: block;
   color: var(--muted);
@@ -542,17 +826,23 @@ h1 {
   border-color: rgba(140, 255, 102, 0.22);
 }
 
-.trace-card.error {
+.trace-card.error,
+.trace-card.offline,
+.trace-card.stale {
   border-color: rgba(255, 133, 112, 0.28);
 }
 
-.trace-card.running {
+.trace-card.running,
+.trace-card.warning {
   border-color: rgba(255, 211, 111, 0.25);
 }
 
 .activity-log {
   display: grid;
   gap: 10px;
+  max-height: 420px;
+  overflow: auto;
+  padding-right: 6px;
 }
 
 .webhook-grid {
@@ -560,6 +850,25 @@ h1 {
   grid-template-columns: 2fr minmax(180px, 1fr) auto;
   gap: 14px;
   align-items: end;
+}
+
+.webhook-section {
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.webhook-status-panel {
+  margin-top: 14px;
+}
+
+.webhook-section-label {
+  margin-bottom: 12px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .webhook-field {
@@ -637,6 +946,10 @@ h1 {
   border: 1px solid rgba(198, 255, 127, 0.08);
 }
 
+.ops-detail {
+  overflow: hidden;
+}
+
 .ops-card {
   display: grid;
   gap: 8px;
@@ -668,12 +981,7 @@ h1 {
 }
 
 .ops-button {
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
   padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text);
-  cursor: pointer;
 }
 
 .ops-button.danger {
@@ -695,6 +1003,19 @@ h1 {
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.activity-log::-webkit-scrollbar,
+.ops-detail-pre::-webkit-scrollbar {
+  width: 8px;
+}
+
+.activity-log::-webkit-scrollbar-thumb,
+.ops-detail-pre::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .log-row {
@@ -702,6 +1023,7 @@ h1 {
   grid-template-columns: 104px 74px 1fr;
   gap: 14px;
   padding: 10px 0;
+  align-items: start;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
@@ -741,14 +1063,56 @@ h1 {
   font-size: 14px;
 }
 
-@media (max-width: 860px) {
-  .hero,
-  .footer {
-    flex-direction: column;
-    align-items: flex-start;
+@media (max-width: 1024px) {
+  .summary-strip,
+  .insight-grid,
+  .ops-grid,
+  .key-levels-bottom,
+  .trace-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .grid {
+  .technical-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .key-levels-core {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .key-levels-top {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .shell {
+    width: min(calc(100% - 20px), 100%);
+    padding: 20px 0 28px;
+  }
+
+  .hero,
+  .hero-actions,
+  .footer,
+  .webhook-secondary-row,
+  .ops-toolbar,
+  .ops-card-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .summary-strip,
+  .grid,
+  .insight-grid,
+  .ops-grid,
+  .status-grid,
+  .webhook-grid,
+  .trace-grid,
+  .model-grid,
+  .technical-groups,
+  .key-levels-top,
+  .key-levels-bottom,
+  .key-levels-core {
     grid-template-columns: 1fr;
   }
 
@@ -758,33 +1122,6 @@ h1 {
 
   .chain-grid {
     grid-template-columns: 1fr;
-  }
-
-  .status-grid,
-  .model-grid,
-  .trace-grid,
-  .webhook-grid,
-  .insight-grid,
-  .ops-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .key-levels-top,
-  .key-levels-bottom,
-  .key-levels-core {
-    grid-template-columns: 1fr;
-  }
-
-  .webhook-secondary-row,
-  .ops-toolbar,
-  .ops-card-header {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .log-row {
-    grid-template-columns: 1fr;
-    gap: 4px;
   }
 
   .chain-link {
@@ -798,5 +1135,27 @@ h1 {
     min-height: 1px;
     flex: 1;
     background: linear-gradient(90deg, transparent, rgba(198, 255, 127, 0.65), transparent);
+  }
+
+  .log-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+
+@media (max-width: 480px) {
+  .panel,
+  .summary-card,
+  .feed-card {
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .signal-action {
+    font-size: 34px;
+  }
+
+  .feed-price {
+    font-size: clamp(32px, 9vw, 46px);
   }
 }

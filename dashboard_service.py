@@ -18,12 +18,21 @@ ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 OPTIMIZATION_RESULTS_FILE = os.path.join(ROOT_DIR, "optimization_results.json")
 
 
-def _trace_event(trace: list[dict[str, Any]], step: str, status: str, detail: str) -> None:
+def _trace_event(
+    trace: list[dict[str, Any]],
+    step: str,
+    status: str,
+    detail: str,
+    detail_code: str = "",
+    detail_params: dict[str, Any] | None = None,
+) -> None:
     trace.append(
         {
             "step": step,
             "status": status,
             "detail": detail,
+            "detail_code": detail_code,
+            "detail_params": detail_params or {},
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
     )
@@ -50,6 +59,8 @@ def _default_webhook_config() -> dict[str, Any]:
         "last_signature": "",
         "last_push_status": "idle",
         "last_push_message": "",
+        "last_push_message_code": "",
+        "last_push_message_params": {},
         "last_push_at": "",
         "last_signal_summary": "",
     }
@@ -80,7 +91,7 @@ def save_webhook_config(payload: dict[str, Any]) -> dict[str, Any]:
             current["mode"] = incoming_mode
     if "enabled" in payload:
         current["enabled"] = bool(payload.get("enabled"))
-    for key in ["last_signature", "last_push_status", "last_push_message", "last_push_at", "last_signal_summary"]:
+    for key in ["last_signature", "last_push_status", "last_push_message", "last_push_message_code", "last_push_message_params", "last_push_at", "last_signal_summary"]:
         if key in payload:
             current[key] = payload[key]
 
@@ -336,8 +347,10 @@ def _build_key_levels(quote: dict[str, Any]) -> dict[str, Any]:
         "zone": analysis.get("zone", "neutral"),
         "zone_label": _zone_label(analysis.get("zone", "neutral")),
         "nearest_support": nearest_support,
+        "nearest_support_key": "S1" if nearest_support_label == "第一支撑" else "S2" if nearest_support_label == "第二支撑" else "S3" if nearest_support_label == "第三支撑" else "",
         "nearest_support_label": nearest_support_label or "--",
         "nearest_resistance": nearest_resistance,
+        "nearest_resistance_key": "R1" if nearest_resistance_label == "第一压力" else "R2" if nearest_resistance_label == "第二压力" else "R3" if nearest_resistance_label == "第三压力" else "",
         "nearest_resistance_label": nearest_resistance_label or "--",
         "active_signals": [
             {
@@ -363,13 +376,17 @@ def maybe_push_webhook(
     if not _should_push_signal(updated, ui, signal):
         updated["last_push_status"] = "skipped"
         updated["last_push_message"] = "当前模式下不触发推送"
+        updated["last_push_message_code"] = "WEBHOOK_SKIPPED_BY_MODE"
+        updated["last_push_message_params"] = {}
         return updated
 
     signature = _build_push_signature(ui, signal, quote)
     if signature == updated.get("last_signature"):
         updated["last_push_status"] = "deduped"
         updated["last_push_message"] = "同一信号已推送，已去重"
-        _trace_event(trace, "webhook", "success", "Webhook 去重，未重复推送")
+        updated["last_push_message_code"] = "WEBHOOK_DEDUPED"
+        updated["last_push_message_params"] = {}
+        _trace_event(trace, "webhook", "success", "Webhook 去重，未重复推送", "WEBHOOK_DEDUPED", {})
         save_webhook_config(updated)
         return updated
 
@@ -378,20 +395,24 @@ def maybe_push_webhook(
         "content": {"text": _format_feishu_text(ui, signal, quote)},
     }
     try:
-        _trace_event(trace, "webhook", "running", "推送飞书 Webhook")
+        _trace_event(trace, "webhook", "running", "推送飞书 Webhook", "WEBHOOK_PUSHING", {})
         response = send_webhook_text(updated["url"], _format_feishu_text(ui, signal, quote), timeout=8)
         response.raise_for_status()
         updated["last_signature"] = signature
         updated["last_push_status"] = "success"
         updated["last_push_message"] = "推送成功"
+        updated["last_push_message_code"] = "WEBHOOK_PUSH_SUCCESS"
+        updated["last_push_message_params"] = {}
         updated["last_push_at"] = datetime.now(timezone.utc).isoformat()
         updated["last_signal_summary"] = _build_signal_summary(ui, signal)
-        _trace_event(trace, "webhook", "success", "Webhook 推送成功")
+        _trace_event(trace, "webhook", "success", "Webhook 推送成功", "WEBHOOK_PUSH_SUCCESS", {})
     except Exception as exc:
         updated["last_push_status"] = "error"
         updated["last_push_message"] = str(exc)
+        updated["last_push_message_code"] = "WEBHOOK_PUSH_ERROR"
+        updated["last_push_message_params"] = {"error": str(exc)}
         updated["last_push_at"] = datetime.now(timezone.utc).isoformat()
-        _trace_event(trace, "webhook", "error", f"Webhook 推送失败: {exc}")
+        _trace_event(trace, "webhook", "error", f"Webhook 推送失败: {exc}", "WEBHOOK_PUSH_ERROR", {"error": str(exc)})
     save_webhook_config(updated)
     return updated
 
@@ -401,6 +422,8 @@ def send_test_webhook_message() -> dict[str, Any]:
     if not webhook.get("url"):
         webhook["last_push_status"] = "error"
         webhook["last_push_message"] = "未配置 Webhook URL"
+        webhook["last_push_message_code"] = "WEBHOOK_URL_MISSING"
+        webhook["last_push_message_params"] = {}
         save_webhook_config(webhook)
         return {"ok": False, "message": "未配置 Webhook URL", "webhook": webhook}
 
@@ -414,6 +437,8 @@ def send_test_webhook_message() -> dict[str, Any]:
         response.raise_for_status()
         webhook["last_push_status"] = "success"
         webhook["last_push_message"] = "测试消息已发送"
+        webhook["last_push_message_code"] = "WEBHOOK_TEST_SUCCESS"
+        webhook["last_push_message_params"] = {}
         webhook["last_push_at"] = datetime.now(timezone.utc).isoformat()
         webhook["last_signal_summary"] = "TEST_MESSAGE | Dashboard webhook connectivity check"
         save_webhook_config(webhook)
@@ -421,6 +446,8 @@ def send_test_webhook_message() -> dict[str, Any]:
     except Exception as exc:
         webhook["last_push_status"] = "error"
         webhook["last_push_message"] = str(exc)
+        webhook["last_push_message_code"] = "WEBHOOK_TEST_ERROR"
+        webhook["last_push_message_params"] = {"error": str(exc)}
         webhook["last_push_at"] = datetime.now(timezone.utc).isoformat()
         save_webhook_config(webhook)
         return {"ok": False, "message": str(exc), "webhook": webhook}
@@ -485,26 +512,26 @@ def load_ops_overview(limit: int = 8) -> dict[str, Any]:
 
 def build_dashboard_snapshot() -> dict[str, Any]:
     trace: list[dict[str, Any]] = []
-    _trace_event(trace, "webhook", "running", "读取 Webhook 配置")
+    _trace_event(trace, "webhook", "running", "读取 Webhook 配置", "WEBHOOK_CONFIG_LOADING", {})
     webhook = load_webhook_config()
-    _trace_event(trace, "webhook", "success", "Webhook 配置已加载")
-    _trace_event(trace, "position", "running", "读取持仓状态")
+    _trace_event(trace, "webhook", "success", "Webhook 配置已加载", "WEBHOOK_CONFIG_LOADED", {})
+    _trace_event(trace, "position", "running", "读取持仓状态", "POSITION_LOADING", {})
     position = load_position_state()
-    _trace_event(trace, "position", "success", "持仓状态已加载")
-    _trace_event(trace, "backtest", "running", "读取回测摘要")
+    _trace_event(trace, "position", "success", "持仓状态已加载", "POSITION_LOADED", {})
+    _trace_event(trace, "backtest", "running", "读取回测摘要", "BACKTEST_LOADING", {})
     backtest = load_backtest_summary()
-    _trace_event(trace, "backtest", "success", "回测摘要已加载")
-    _trace_event(trace, "ops", "running", "读取 Agent 运维视图")
+    _trace_event(trace, "backtest", "success", "回测摘要已加载", "BACKTEST_LOADED", {})
+    _trace_event(trace, "ops", "running", "读取 Agent 运维视图", "OPS_LOADING", {})
     ops = load_ops_overview()
-    _trace_event(trace, "ops", "success", "Agent 运维视图已加载")
-    _trace_event(trace, "daemon", "running", "读取 webhook daemon 心跳")
+    _trace_event(trace, "ops", "success", "Agent 运维视图已加载", "OPS_LOADED", {})
+    _trace_event(trace, "daemon", "running", "读取 webhook daemon 心跳", "DAEMON_LOADING", {})
     daemon = load_webhook_daemon_status()
-    _trace_event(trace, "daemon", "success", f"daemon 状态: {daemon.get('status', 'offline')}")
-    _trace_event(trace, "quote", "running", "获取 MSTU/MSTR 行情")
+    _trace_event(trace, "daemon", "success", f"daemon 状态: {daemon.get('status', 'offline')}", "DAEMON_STATUS", {"status": daemon.get("status", "offline")})
+    _trace_event(trace, "quote", "running", "获取 MSTU/MSTR 行情", "QUOTE_LOADING", {})
     quote = get_mstu_quote()
 
     if "error" in quote:
-        _trace_event(trace, "quote", "error", f"行情获取失败: {quote['error']}")
+        _trace_event(trace, "quote", "error", f"行情获取失败: {quote['error']}", "QUOTE_ERROR", {"error": quote["error"]})
         return {
             "status": "degraded",
             "quote": {"status": "error", "error": quote["error"]},
@@ -526,11 +553,11 @@ def build_dashboard_snapshot() -> dict[str, Any]:
             "trace": trace,
         }
 
-    _trace_event(trace, "quote", "success", "行情获取完成")
-    _trace_event(trace, "signal", "running", "执行策略分析")
+    _trace_event(trace, "quote", "success", "行情获取完成", "QUOTE_LOADED", {})
+    _trace_event(trace, "signal", "running", "执行策略分析", "SIGNAL_ANALYZING", {})
     strategy = TradingStrategy()
     signal = strategy.analyze(quote)
-    _trace_event(trace, "signal", "success", f"策略动作: {signal.get('action', 'UNKNOWN')}")
+    _trace_event(trace, "signal", "success", f"策略动作: {signal.get('action', 'UNKNOWN')}", "SIGNAL_ACTION", {"action": signal.get("action", "UNKNOWN")})
     mstr = quote.get("mstr", {})
     key_levels = _build_key_levels(quote)
     ui = {
@@ -538,7 +565,7 @@ def build_dashboard_snapshot() -> dict[str, Any]:
         "decision_status": _normalize_decision_status(signal),
         "date_label": _date_label_shanghai(),
     }
-    _trace_event(trace, "snapshot", "success", "本次刷新完成")
+    _trace_event(trace, "snapshot", "success", "本次刷新完成", "SNAPSHOT_DONE", {})
 
     return {
         "status": "ok",
